@@ -935,7 +935,7 @@ export default function ShopDetailPage() {
           )}
 
           {/* KVK Lookup Results */}
-          {kvkRecords.length > 0 && (
+          {(kvkRecords.length > 0 || shop.kvk_records?.length > 0) && (
             <div style={{
               background: 'var(--bg-card)',
               border: '1px solid var(--border)',
@@ -947,6 +947,44 @@ export default function ShopDetailPage() {
               }}>
                 🏢 KVK Handelsregister
               </div>
+
+              {/* Domain search result */}
+              {(() => {
+                // Try to get domain_search from latest KVK raw_data
+                const latestKvkRaw = kvkRecords.length > 0 ? parseJSONObj(kvkRecords[0]?.raw_data) : null;
+                const domainSearch = latestKvkRaw?.domain_search;
+                if (!domainSearch) return null;
+
+                return (
+                  <div style={{
+                    padding: '10px 14px', borderRadius: 8, marginBottom: 12,
+                    background: domainSearch.found ? 'rgba(74, 222, 128, 0.06)' : 'rgba(248, 113, 113, 0.06)',
+                    border: domainSearch.found ? '1px solid rgba(74, 222, 128, 0.2)' : '1px solid rgba(248, 113, 113, 0.2)',
+                  }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 4 }}>
+                      {domainSearch.found ? '✅' : '❌'} Domein "{domainSearch.search_term}" zoeken bij KVK
+                    </div>
+                    {domainSearch.found && domainSearch.results?.length > 0 ? (
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
+                          {domainSearch.results.length} registratie(s) gevonden:
+                        </div>
+                        {domainSearch.results.slice(0, 3).map((r, i) => (
+                          <div key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '2px 0', paddingLeft: 12 }}>
+                            {r.kvk_number && <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--gold)' }}>KVK {r.kvk_number} </span>}
+                            {r.name}
+                            {r.city && <span style={{ color: 'var(--text-muted)' }}> — {r.city}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        Geen bedrijf gevonden met deze handelsnaam bij de KVK
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div style={{ display: 'grid', gap: 10 }}>
                 {kvkRecords.map((kvk, ki) => {

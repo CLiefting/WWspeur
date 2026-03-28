@@ -277,18 +277,104 @@ def _check_domain_match(domain, company_name, trade_names):
     }
 
 
+# ── Domain search at KVK ──
+
+def _search_kvk_by_domain(domain):
+    """
+    Search KVK for a business registered under this domain name.
+    Strips TLD and searches as trade name.
+    """
+    result = {
+        "source": "domain_search",
+        "search_term": None,
+        "found": False,
+        "results": [],
+        "error": None,
+    }
+
+    # Extract meaningful name from domain (remove TLD)
+    domain_name = domain.split(".")[0].lower()
+    # Also try with hyphens replaced by spaces
+    search_terms = [domain_name]
+    if "-" in domain_name:
+        search_terms.append(domain_name.replace("-", " "))
+
+    result["search_term"] = domain_name
+
+    try:
+        session = requests.Session()
+        session.headers.update({"User-Agent": USER_AGENT})
+
+        for term in search_terms:
+            if len(term) < 3:
+                continue
+
+            # Try official KVK API first
+            if KVK_API_KEY:
+                try:
+                    base = _get_api_base()
+                    headers = {"apikey": KVK_API_KEY}
+                    search_url = "{}/zoeken?handelsnaam={}".format(base, quote(term))
+                    response = requests.get(search_url, headers=headers, timeout=REQUEST_TIMEOUT)
+                    if response.status_code == 200:
+                        data = response.json()
+                        for r in data.get("resultaten", [])[:5]:
+                            addr = r.get("adres", {}).get("binnenlandsAdres", {})
+                            result["results"].append({
+                                "kvk_number": r.get("kvkNummer"),
+                                "name": r.get("naam"),
+                                "city": addr.get("plaats"),
+                                "type": r.get("type"),
+                            })
+                        if result["results"]:
+                            result["found"] = True
+                            return result
+                except Exception:
+                    pass
+
+            # Fallback: DuckDuckGo search
+            ddg_url = "https://html.duckduckgo.com/html/?q={}".format(
+                quote('site:kvk.nl "{}"'.format(term))
+            )
+            response = session.get(ddg_url, timeout=REQUEST_TIMEOUT)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, "lxml")
+                for link in soup.select("a.result__a"):
+                    title = link.get_text(strip=True)
+                    href = link.get("href", "")
+                    if "kvk.nl" in href:
+                        # Extract KVK number from URL or title
+                        kvk_match = re.search(r'(\d{8})', href + " " + title)
+                        result["results"].append({
+                            "kvk_number": kvk_match.group(1) if kvk_match else None,
+                            "name": title[:100],
+                            "city": None,
+                            "type": None,
+                            "url": href,
+                        })
+
+                if result["results"]:
+                    result["found"] = True
+                    return result
+
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+
 # ── Main lookup function ──
 
 def lookup_kvk(kvk_numbers: List[str], domain: str) -> dict:
     """
-    Look up one or more KVK numbers.
+    Look up one or more KVK numbers AND search domain name at KVK.
     Uses official API if key is available, otherwise free fallback.
 
     Args:
         kvk_numbers: List of KVK numbers found on the website
         domain: The website domain (for matching)
 
-    Returns dict with lookup results per KVK number.
+    Returns dict with lookup results per KVK number + domain search.
     """
     logger.info("KVK lookup voor %d nummer(s), domein: %s", len(kvk_numbers), domain)
 
@@ -296,12 +382,22 @@ def lookup_kvk(kvk_numbers: List[str], domain: str) -> dict:
         "domain": domain,
         "kvk_numbers_found": kvk_numbers,
         "lookups": [],
+        "domain_search": None,
         "api_used": "kvk_api" if KVK_API_KEY else "openkvk_fallback",
         "total_found": 0,
         "total_active": 0,
         "domain_match": None,
     }
 
+    # Step 1: Search KVK by domain name (always, even without KVK numbers)
+    if domain:
+        logger.info("Zoek domein '%s' als handelsnaam bij KVK", domain)
+        domain_search = _search_kvk_by_domain(domain)
+        results["domain_search"] = domain_search
+        if domain_search.get("found"):
+            logger.info("Domein '%s' gevonden bij KVK: %d resultaten", domain, len(domain_search["results"]))
+
+    # Step 2: Look up specific KVK numbers found on the site
     for kvk_number in kvk_numbers[:5]:  # Max 5 lookups
         kvk_number = kvk_number.strip()
         if not re.match(r'^\d{8}$', kvk_number):
@@ -353,6 +449,7 @@ def save_kvk_result(result: dict, shop_id: int, scan_id: int, db_session):
     from app.models.collectors import KvKRecord
 
     now = datetime.now(timezone.utc)
+    saved_any = False
 
     for lookup in result.get("lookups", []):
         if not lookup.get("kvk_number"):
@@ -367,6 +464,11 @@ def save_kvk_result(result: dict, shop_id: int, scan_id: int, db_session):
                     reg_date = date(int(rd[:4]), int(rd[4:6]), int(rd[6:8]))
             except (ValueError, TypeError):
                 pass
+
+        # Include domain_search in raw_data of first record
+        raw = dict(lookup)
+        if not saved_any and result.get("domain_search"):
+            raw["domain_search"] = result["domain_search"]
 
         record = KvKRecord(
             shop_id=shop_id,
@@ -384,7 +486,24 @@ def save_kvk_result(result: dict, shop_id: int, scan_id: int, db_session):
             is_active=lookup.get("is_active"),
             sbi_codes=json.dumps(lookup.get("sbi_codes", [])),
             source=lookup.get("source", "unknown"),
-            raw_data=json.dumps(lookup),
+            raw_data=json.dumps(raw),
+            collected_at=now,
+        )
+        db_session.add(record)
+        saved_any = True
+
+    # If no KVK numbers were found but domain search had results, save a placeholder
+    if not saved_any and result.get("domain_search", {}).get("found"):
+        ds = result["domain_search"]
+        first_result = ds["results"][0] if ds.get("results") else {}
+        record = KvKRecord(
+            shop_id=shop_id,
+            scan_id=scan_id,
+            kvk_number=first_result.get("kvk_number"),
+            company_name=first_result.get("name"),
+            city=first_result.get("city"),
+            source="domain_search",
+            raw_data=json.dumps({"domain_search": ds}),
             collected_at=now,
         )
         db_session.add(record)

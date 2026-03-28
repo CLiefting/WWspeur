@@ -233,9 +233,9 @@ def run_kvk_collector(shop: Shop, scan: Scan, db: Session, kvk_numbers: list = N
                 except (json.JSONDecodeError, TypeError):
                     kvk_numbers = []
 
+        # Always run - domain search works even without KVK numbers
         if not kvk_numbers:
-            logger.info(f"No KVK numbers found for shop {shop.id}")
-            return {"lookups": [], "error": "Geen KVK-nummers gevonden op de site"}
+            kvk_numbers = []
 
         from urllib.parse import urlparse
         domain = urlparse(shop.url).netloc.lower().lstrip("www.")
