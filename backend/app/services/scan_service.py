@@ -15,6 +15,7 @@ from app.collectors.dns_http import check_dns_http_redirects, save_dns_http_resu
 from app.collectors.tech_detect import detect_technologies, save_tech_result
 from app.collectors.trustmark_verify import verify_all_trustmarks, save_trustmark_result
 from app.collectors.ad_tracker import detect_ad_trackers, save_ad_tracker_result
+from app.collectors.kvk_lookup import lookup_kvk, save_kvk_result
 from app.services.progress import update_scan_progress
 
 logger = logging.getLogger(__name__)
@@ -167,7 +168,7 @@ def run_ad_tracker_collector(shop: Shop, scan: Scan, db: Session) -> dict:
 
 
 def run_scrape_collector(
-    shop: Shop, scan: Scan, db: Session, max_pages: int = 50,
+    shop: Shop, scan: Scan, db: Session, max_pages: int = 200,
 ) -> dict:
     """Run the HTML scraper collector on a shop."""
     logger.info(f"Starting scrape collector for shop {shop.id}: {shop.url}")
@@ -201,3 +202,47 @@ def run_scrape_collector(
     except Exception as e:
         logger.error(f"Scrape collector failed for shop {shop.id}: {e}")
         raise
+
+
+def run_kvk_collector(shop: Shop, scan: Scan, db: Session, kvk_numbers: list = None) -> dict:
+    """Run the KVK lookup collector."""
+    logger.info(f"Starting KVK lookup for shop {shop.id}: {shop.url}")
+
+    try:
+        update_scan_progress(scan, db, {
+            "collector": "kvk",
+            "status": "KVK-nummers opzoeken...",
+        })
+
+        if not kvk_numbers:
+            # Try to get KVK numbers from existing scrape records
+            from app.models.collectors import ScrapeRecord
+            latest = (
+                db.query(ScrapeRecord)
+                .filter(ScrapeRecord.shop_id == shop.id)
+                .order_by(ScrapeRecord.id.desc())
+                .first()
+            )
+            if latest and latest.kvk_numbers_found:
+                try:
+                    kvk_numbers = json.loads(latest.kvk_numbers_found)
+                except (json.JSONDecodeError, TypeError):
+                    kvk_numbers = []
+
+        if not kvk_numbers:
+            logger.info(f"No KVK numbers found for shop {shop.id}")
+            return {"lookups": [], "error": "Geen KVK-nummers gevonden op de site"}
+
+        from urllib.parse import urlparse
+        domain = urlparse(shop.url).netloc.lower().lstrip("www.")
+
+        result = lookup_kvk(kvk_numbers, domain)
+        save_kvk_result(result, shop.id, scan.id, db)
+        _mark_collector_done(scan, "kvk", db)
+
+        logger.info(f"KVK lookup completed for shop {shop.id}")
+        return result
+
+    except Exception as e:
+        logger.error(f"KVK lookup failed for shop {shop.id}: {e}")
+        return {"error": str(e)}

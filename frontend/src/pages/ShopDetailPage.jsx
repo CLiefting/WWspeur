@@ -151,6 +151,8 @@ export default function ShopDetailPage() {
   const latestAdTracker = shop.ad_tracker_records?.[shop.ad_tracker_records.length - 1];
   const adTrackers = latestAdTracker ? parseJSON(latestAdTracker.trackers) : [];
   const adCrossRefs = latestAdTracker ? parseJSON(latestAdTracker.cross_references) : [];
+  const kvkRecords = shop.kvk_records || [];
+  const latestKvk = kvkRecords.length > 0 ? kvkRecords[kvkRecords.length - 1] : null;
 
   const riskColors = {
     unknown: 'var(--text-muted)', low: 'var(--success)',
@@ -827,6 +829,122 @@ export default function ShopDetailPage() {
                           </div>
                         )}
                       </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* KVK Lookup Results */}
+          {kvkRecords.length > 0 && (
+            <div style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
+              borderRadius: 10, padding: '16px 20px', marginBottom: 24,
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 14,
+              }}>
+                🏢 KVK Handelsregister
+              </div>
+
+              <div style={{ display: 'grid', gap: 10 }}>
+                {kvkRecords.map((kvk, ki) => {
+                  const tradeNames = parseJSON(kvk.trade_names);
+                  const sbiCodes = parseJSON(kvk.sbi_codes);
+                  const rawData = parseJSONObj(kvk.raw_data);
+                  const domainMatch = rawData?.domain_match;
+
+                  return (
+                    <div key={ki} style={{
+                      padding: '12px 16px', borderRadius: 8,
+                      background: 'rgba(255,255,255,0.02)',
+                      border: kvk.is_active === false ? '1px solid rgba(248, 113, 113, 0.3)' : '1px solid var(--border)',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <div>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 14, color: 'var(--gold)' }}>
+                            KVK {kvk.kvk_number}
+                          </span>
+                          <span style={{
+                            fontSize: 10, marginLeft: 8, padding: '2px 8px', borderRadius: 12,
+                            background: kvk.source === 'kvk_api' ? 'rgba(74, 222, 128, 0.15)' : 'var(--border)',
+                            color: kvk.source === 'kvk_api' ? 'var(--success)' : 'var(--text-muted)',
+                          }}>
+                            {kvk.source === 'kvk_api' ? 'Officieel' : 'OpenKVK'}
+                          </span>
+                        </div>
+                        {kvk.is_active !== null && (
+                          <span style={{
+                            fontSize: 11, padding: '2px 10px', borderRadius: 20, fontWeight: 600,
+                            background: kvk.is_active ? 'rgba(74, 222, 128, 0.15)' : 'rgba(248, 113, 113, 0.15)',
+                            color: kvk.is_active ? 'var(--success)' : 'var(--danger)',
+                          }}>
+                            {kvk.is_active ? 'Actief' : 'Uitgeschreven!'}
+                          </span>
+                        )}
+                      </div>
+
+                      {kvk.company_name && (
+                        <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
+                          {kvk.company_name}
+                        </div>
+                      )}
+
+                      {tradeNames.length > 0 && (
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>
+                          Handelsnamen: {tradeNames.join(', ')}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 12 }}>
+                        {kvk.legal_form && (
+                          <div><span style={{ color: 'var(--text-muted)' }}>Rechtsvorm: </span><span style={{ color: 'var(--text-secondary)' }}>{kvk.legal_form}</span></div>
+                        )}
+                        {kvk.city && (
+                          <div><span style={{ color: 'var(--text-muted)' }}>Plaats: </span><span style={{ color: 'var(--text-secondary)' }}>{kvk.city}</span></div>
+                        )}
+                        {kvk.street && (
+                          <div><span style={{ color: 'var(--text-muted)' }}>Adres: </span><span style={{ color: 'var(--text-secondary)' }}>{kvk.street} {kvk.house_number}</span></div>
+                        )}
+                        {kvk.postal_code && (
+                          <div><span style={{ color: 'var(--text-muted)' }}>Postcode: </span><span style={{ color: 'var(--text-secondary)' }}>{kvk.postal_code}</span></div>
+                        )}
+                      </div>
+
+                      {sbiCodes.length > 0 && (
+                        <div style={{ marginTop: 8 }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Activiteiten (SBI)</div>
+                          {sbiCodes.slice(0, 3).map((sbi, si) => (
+                            <div key={si} style={{ fontSize: 11, color: 'var(--text-secondary)', padding: '1px 0' }}>
+                              {typeof sbi === 'object' ? (sbi.code ? sbi.code + ' — ' : '') + (sbi.description || '') : sbi}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Domain match indicator */}
+                      {domainMatch && (
+                        <div style={{
+                          marginTop: 8, padding: '6px 10px', borderRadius: 6,
+                          background: domainMatch.match === 'strong' ? 'rgba(74, 222, 128, 0.08)' :
+                                     domainMatch.match === 'partial' ? 'var(--gold-glow)' :
+                                     'rgba(248, 113, 113, 0.08)',
+                          border: domainMatch.match === 'none' ? '1px solid rgba(248, 113, 113, 0.3)' : '1px solid transparent',
+                        }}>
+                          <span style={{ fontSize: 12 }}>
+                            {domainMatch.match === 'strong' ? '✅' : domainMatch.match === 'partial' ? '🟡' : '❌'}
+                          </span>
+                          <span style={{
+                            fontSize: 11, marginLeft: 6,
+                            color: domainMatch.match === 'none' ? 'var(--danger)' : 'var(--text-secondary)',
+                          }}>
+                            {domainMatch.details}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

@@ -13,7 +13,7 @@ export default function DashboardPage() {
   const [scanStatus, setScanStatus] = useState('');
   const [error, setError] = useState('');
   const [csvResult, setCsvResult] = useState(null);
-  const [maxPages, setMaxPages] = useState(50);
+  const [maxPages, setMaxPages] = useState(200);
   const [scanningUrl, setScanningUrl] = useState('');
   const [currentScanId, setCurrentScanId] = useState(null);
   const [currentShopId, setCurrentShopId] = useState(null);
@@ -43,7 +43,7 @@ export default function DashboardPage() {
     setScanProgress(null);
     abortRef.current = false;
 
-    const scan = await scans.create(shopId, ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape'], maxPages);
+    const scan = await scans.create(shopId, ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape', 'kvk'], maxPages);
     setCurrentScanId(scan.id);
 
     await scans.pollUntilDone(

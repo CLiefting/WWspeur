@@ -12,7 +12,7 @@ from app.models.user import User
 from app.models.shop import Shop
 from app.models.scan import Scan, ScanStatus
 from app.schemas.scan import ScanCreate, ScanResponse
-from app.services.scan_service import run_scrape_collector, run_whois_collector, run_ssl_collector, run_dns_http_collector, run_tech_collector, run_trustmark_collector, run_ad_tracker_collector
+from app.services.scan_service import run_scrape_collector, run_whois_collector, run_ssl_collector, run_dns_http_collector, run_tech_collector, run_trustmark_collector, run_ad_tracker_collector, run_kvk_collector
 
 router = APIRouter()
 
@@ -131,12 +131,19 @@ def _run_scan_background(scan_id: int, shop_id: int, collectors: list[str], max_
             except Exception as e:
                 logger.error(f"Ad tracker detection failed: {e}")
 
-        # Run scraper last (slow, crawls pages)
+        # Run scraper (slow, crawls pages)
         if "scrape" in collectors:
             try:
                 run_scrape_collector(shop=shop, scan=scan, db=db, max_pages=max_pages)
             except Exception as e:
                 logger.error(f"Scrape collector failed: {e}")
+
+        # Run KVK lookup (after scraper, needs KVK numbers from scraped pages)
+        if "kvk" in collectors:
+            try:
+                run_kvk_collector(shop=shop, scan=scan, db=db)
+            except Exception as e:
+                logger.error(f"KVK lookup failed: {e}")
 
         # If not already marked completed by the last collector
         if scan.status == "running":
