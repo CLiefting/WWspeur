@@ -116,6 +116,8 @@ export default function ShopDetailPage() {
 
   // Get latest scrape record
   const latestScrape = shop.scrape_records?.[shop.scrape_records.length - 1];
+  const latestWhois = shop.whois_records?.[shop.whois_records.length - 1];
+  const latestSSL = shop.ssl_records?.[shop.ssl_records.length - 1];
 
   // Parse JSON fields safely
   const parseJSON = (str) => {
@@ -128,6 +130,8 @@ export default function ShopDetailPage() {
   const addresses = latestScrape ? parseJSON(latestScrape.addresses_found) : [];
   const socialMedia = latestScrape ? parseJSON(latestScrape.social_media_links) : {};
   const externalLinks = latestScrape ? parseJSON(latestScrape.external_links) : [];
+  const nameServers = latestWhois ? parseJSON(latestWhois.name_servers) : [];
+  const sanDomains = latestSSL ? parseJSON(latestSSL.san_domains) : [];
 
   const riskColors = {
     unknown: 'var(--text-muted)', low: 'var(--success)',
@@ -188,7 +192,7 @@ export default function ShopDetailPage() {
       </div>
 
       {/* No data yet */}
-      {!latestScrape && (
+      {!latestScrape && !latestWhois && !latestSSL && (
         <div style={{
           textAlign: 'center', padding: '60px 0',
           color: 'var(--text-muted)',
@@ -200,7 +204,7 @@ export default function ShopDetailPage() {
       )}
 
       {/* Results */}
-      {latestScrape && (
+      {(latestScrape || latestWhois || latestSSL) && (
         <>
           {/* Stats row */}
           <div style={{
@@ -277,9 +281,9 @@ export default function ShopDetailPage() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 24px' }}>
               {[
-                { label: 'KvK-nummer', value: latestScrape.kvk_number_found },
-                { label: 'BTW-nummer', value: latestScrape.btw_number_found },
-                { label: 'IBAN', value: latestScrape.iban_found },
+                { label: 'KvK-nummer', value: latestScrape?.kvk_number_found },
+                { label: 'BTW-nummer', value: latestScrape?.btw_number_found },
+                { label: 'IBAN', value: latestScrape?.iban_found },
               ].map(({ label, value }) => (
                 <div key={label}>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
@@ -291,6 +295,155 @@ export default function ShopDetailPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* WHOIS & SSL side by side */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
+            {/* WHOIS card */}
+            <div style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
+              borderRadius: 10, padding: '16px 20px',
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12,
+              }}>
+                🌐 WHOIS domeinregistratie
+              </div>
+              {latestWhois ? (
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {[
+                    { label: 'Registrar', value: latestWhois.registrar },
+                    { label: 'Registrant', value: latestWhois.registrant_name },
+                    { label: 'Organisatie', value: latestWhois.registrant_organization },
+                    { label: 'Land', value: latestWhois.registrant_country },
+                    { label: 'Geregistreerd', value: latestWhois.registration_date },
+                    { label: 'Vervalt', value: latestWhois.expiration_date },
+                    { label: 'Domein leeftijd', value: latestWhois.domain_age_days ? `${latestWhois.domain_age_days} dagen` : null },
+                  ].map(({ label, value }) => (
+                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</span>
+                      <span style={{
+                        fontSize: 13, fontFamily: 'var(--font-mono)',
+                        color: value ? 'var(--gold-light)' : 'var(--text-muted)',
+                      }}>
+                        {value || '—'}
+                      </span>
+                    </div>
+                  ))}
+                  {/* Privacy indicator */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Privacy beschermd</span>
+                    <span style={{
+                      fontSize: 11, padding: '2px 10px', borderRadius: 20,
+                      background: latestWhois.is_privacy_protected ? 'rgba(232, 160, 32, 0.15)' : 'rgba(74, 222, 128, 0.15)',
+                      color: latestWhois.is_privacy_protected ? 'var(--gold)' : 'var(--success)',
+                      fontWeight: 600,
+                    }}>
+                      {latestWhois.is_privacy_protected ? 'Ja' : 'Nee'}
+                    </span>
+                  </div>
+                  {/* Nameservers */}
+                  {nameServers.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Nameservers</div>
+                      {nameServers.map((ns, i) => (
+                        <div key={i} style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{ns}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Geen WHOIS data beschikbaar</div>
+              )}
+            </div>
+
+            {/* SSL card */}
+            <div style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
+              borderRadius: 10, padding: '16px 20px',
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12,
+              }}>
+                🔒 SSL certificaat
+              </div>
+              {latestSSL ? (
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {/* SSL status */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>SSL actief</span>
+                    <span style={{
+                      fontSize: 11, padding: '2px 10px', borderRadius: 20,
+                      background: latestSSL.has_ssl ? 'rgba(74, 222, 128, 0.15)' : 'rgba(248, 113, 113, 0.15)',
+                      color: latestSSL.has_ssl ? 'var(--success)' : 'var(--danger)',
+                      fontWeight: 600,
+                    }}>
+                      {latestSSL.has_ssl ? 'Ja' : 'Nee'}
+                    </span>
+                  </div>
+                  {[
+                    { label: 'Uitgever', value: latestSSL.issuer },
+                    { label: 'Geldig vanaf', value: latestSSL.valid_from ? new Date(latestSSL.valid_from).toLocaleDateString('nl-NL') : null },
+                    { label: 'Geldig tot', value: latestSSL.valid_until ? new Date(latestSSL.valid_until).toLocaleDateString('nl-NL') : null },
+                  ].map(({ label, value }) => (
+                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</span>
+                      <span style={{
+                        fontSize: 13, fontFamily: 'var(--font-mono)',
+                        color: value ? 'var(--gold-light)' : 'var(--text-muted)',
+                      }}>
+                        {value || '—'}
+                      </span>
+                    </div>
+                  ))}
+                  {/* Expired badge */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Verlopen</span>
+                    <span style={{
+                      fontSize: 11, padding: '2px 10px', borderRadius: 20,
+                      background: latestSSL.is_expired ? 'rgba(248, 113, 113, 0.15)' : 'rgba(74, 222, 128, 0.15)',
+                      color: latestSSL.is_expired ? 'var(--danger)' : 'var(--success)',
+                      fontWeight: 600,
+                    }}>
+                      {latestSSL.is_expired ? 'Ja' : 'Nee'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Self-signed</span>
+                    <span style={{
+                      fontSize: 11, padding: '2px 10px', borderRadius: 20,
+                      background: latestSSL.is_self_signed ? 'rgba(248, 113, 113, 0.15)' : 'rgba(74, 222, 128, 0.15)',
+                      color: latestSSL.is_self_signed ? 'var(--danger)' : 'var(--success)',
+                      fontWeight: 600,
+                    }}>
+                      {latestSSL.is_self_signed ? 'Ja' : 'Nee'}
+                    </span>
+                  </div>
+                  {/* SAN domains */}
+                  {sanDomains.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
+                        SAN domeinen ({sanDomains.length})
+                      </div>
+                      {sanDomains.slice(0, 5).map((d, i) => (
+                        <div key={i} style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{d}</div>
+                      ))}
+                      {sanDomains.length > 5 && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                          + {sanDomains.length - 5} meer
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Geen SSL data beschikbaar</div>
+              )}
             </div>
           </div>
 

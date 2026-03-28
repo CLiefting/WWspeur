@@ -9,25 +9,80 @@ from sqlalchemy.orm import Session
 from app.models.shop import Shop
 from app.models.scan import Scan
 from app.collectors.scraper import crawl_website, save_crawl_result
+from app.collectors.whois_lookup import lookup_whois, save_whois_result
+from app.collectors.ssl_check import check_ssl, save_ssl_result
 from app.services.progress import update_scan_progress
 
 logger = logging.getLogger(__name__)
 
 
-def run_scrape_collector(
-    shop: Shop,
-    scan: Scan,
-    db: Session,
-    max_pages: int = 200,
-) -> dict:
-    logger.info(f"Starting scrape collector for shop {shop.id}: {shop.url}")
-    
-    try:
-        scan.status = "running"
-        scan.started_at = datetime.now(timezone.utc)
-        db.commit()
+def _mark_collector_done(scan, collector_name, db):
+    """Mark a collector as completed on the scan."""
+    completed = json.loads(scan.collectors_completed or "[]")
+    completed.append(collector_name)
+    scan.collectors_completed = json.dumps(completed)
 
+    requested = json.loads(scan.collectors_requested or "[]")
+    if set(completed) >= set(requested):
+        scan.status = "completed"
+        scan.completed_at = datetime.now(timezone.utc)
+        scan.error_message = None
+    db.commit()
+
+
+def run_whois_collector(shop: Shop, scan: Scan, db: Session) -> dict:
+    """Run the WHOIS collector on a shop."""
+    logger.info(f"Starting WHOIS collector for shop {shop.id}: {shop.url}")
+
+    try:
+        update_scan_progress(scan, db, {
+            "collector": "whois",
+            "status": "WHOIS lookup uitvoeren...",
+        })
+
+        result = lookup_whois(shop.url)
+        save_whois_result(result, shop.id, scan.id, db)
+        _mark_collector_done(scan, "whois", db)
+
+        logger.info(f"WHOIS collector completed for shop {shop.id}")
+        return result
+
+    except Exception as e:
+        logger.error(f"WHOIS collector failed for shop {shop.id}: {e}")
+        return {"error": str(e)}
+
+
+def run_ssl_collector(shop: Shop, scan: Scan, db: Session) -> dict:
+    """Run the SSL collector on a shop."""
+    logger.info(f"Starting SSL collector for shop {shop.id}: {shop.url}")
+
+    try:
+        update_scan_progress(scan, db, {
+            "collector": "ssl",
+            "status": "SSL certificaat controleren...",
+        })
+
+        result = check_ssl(shop.url)
+        save_ssl_result(result, shop.id, scan.id, db)
+        _mark_collector_done(scan, "ssl", db)
+
+        logger.info(f"SSL collector completed for shop {shop.id}")
+        return result
+
+    except Exception as e:
+        logger.error(f"SSL collector failed for shop {shop.id}: {e}")
+        return {"error": str(e)}
+
+
+def run_scrape_collector(
+    shop: Shop, scan: Scan, db: Session, max_pages: int = 200,
+) -> dict:
+    """Run the HTML scraper collector on a shop."""
+    logger.info(f"Starting scrape collector for shop {shop.id}: {shop.url}")
+
+    try:
         def on_progress(progress_data):
+            progress_data["collector"] = "scrape"
             try:
                 update_scan_progress(scan, db, progress_data)
             except Exception as e:
@@ -38,46 +93,19 @@ def run_scrape_collector(
             max_pages=max_pages,
             on_progress=on_progress,
         )
-        
-        record = save_crawl_result(
-            result=result,
-            shop_id=shop.id,
-            scan_id=scan.id,
-            db_session=db,
-        )
-        
-        completed = json.loads(scan.collectors_completed or "[]")
-        completed.append("scrape")
-        scan.collectors_completed = json.dumps(completed)
-        
-        requested = json.loads(scan.collectors_requested or "[]")
-        if set(completed) >= set(requested):
-            scan.status = "completed"
-            scan.completed_at = datetime.now(timezone.utc)
-        
-        scan.error_message = None
-        db.commit()
-        
+
+        save_crawl_result(result, shop.id, scan.id, db)
+        _mark_collector_done(scan, "scrape", db)
+
         summary = {
             "pages_crawled": result.pages_crawled,
-            "pages_failed": result.pages_failed,
             "emails_found": len(result.emails),
             "phones_found": len(result.phones),
             "kvk_numbers_found": len(result.kvk_numbers),
-            "btw_numbers_found": len(result.btw_numbers),
-            "iban_numbers_found": len(result.iban_numbers),
-            "addresses_found": len(result.addresses),
-            "external_links_found": len(result.external_links),
-            "social_media_found": len(result.social_media),
         }
-        
         logger.info(f"Scrape collector completed for shop {shop.id}: {summary}")
         return summary
-        
+
     except Exception as e:
         logger.error(f"Scrape collector failed for shop {shop.id}: {e}")
-        scan.status = "failed"
-        scan.error_message = str(e)
-        scan.completed_at = datetime.now(timezone.utc)
-        db.commit()
         raise

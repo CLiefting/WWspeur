@@ -157,10 +157,10 @@ export const shops = {
 };
 
 export const scans = {
-  async create(shopId, collectors = ['scrape']) {
+  async create(shopId, collectors = ['scrape'], maxPages = 200) {
     return request('/scans/', {
       method: 'POST',
-      body: JSON.stringify({ shop_id: shopId, collectors }),
+      body: JSON.stringify({ shop_id: shopId, collectors, max_pages: maxPages }),
     });
   },
   async get(id) { return request('/scans/' + id); },

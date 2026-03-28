@@ -13,6 +13,7 @@ export default function DashboardPage() {
   const [scanStatus, setScanStatus] = useState('');
   const [error, setError] = useState('');
   const [csvResult, setCsvResult] = useState(null);
+  const [maxPages, setMaxPages] = useState(200);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
 
@@ -43,7 +44,7 @@ export default function DashboardPage() {
       setIsScanning(shop.id);
       setScanStatus('Scan gestart...');
       
-      const scan = await scans.create(shop.id, ['scrape']);
+      const scan = await scans.create(shop.id, ['whois', 'ssl', 'scrape'], maxPages);
       
       await scans.pollUntilDone(
         scan.id,
@@ -87,7 +88,7 @@ export default function DashboardPage() {
     setScanProgress(null);
 
     try {
-      const scan = await scans.create(shopId, ['scrape']);
+      const scan = await scans.create(shopId, ['whois', 'ssl', 'scrape'], maxPages);
       await scans.pollUntilDone(
         scan.id,
         (s) => {
@@ -244,6 +245,30 @@ export default function DashboardPage() {
               {csvResult.errors > 0 && `, ${csvResult.errors} fouten`}
             </span>
           )}
+        </div>
+
+        {/* Max pages slider */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 14, marginTop: 12,
+        }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+            Max pagina's
+          </span>
+          <input
+            type="range"
+            min="10"
+            max="1000"
+            step="10"
+            value={maxPages}
+            onChange={e => setMaxPages(parseInt(e.target.value))}
+            style={{ flex: 1, accentColor: 'var(--gold)' }}
+          />
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontSize: 13,
+            color: 'var(--gold-light)', minWidth: 40, textAlign: 'right',
+          }}>
+            {maxPages}
+          </span>
         </div>
       </div>
 

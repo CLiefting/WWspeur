@@ -12,7 +12,7 @@ from app.models.user import User
 from app.models.shop import Shop
 from app.models.scan import Scan, ScanStatus
 from app.schemas.scan import ScanCreate, ScanResponse
-from app.services.scan_service import run_scrape_collector
+from app.services.scan_service import run_scrape_collector, run_whois_collector, run_ssl_collector
 
 router = APIRouter()
 
@@ -61,17 +61,18 @@ def create_scan(
         scan_id=scan.id,
         shop_id=shop.id,
         collectors=scan_data.collectors,
+        max_pages=scan_data.max_pages,
     )
 
     return scan
 
 
-def _run_scan_background(scan_id: int, shop_id: int, collectors: list[str]):
+def _run_scan_background(scan_id: int, shop_id: int, collectors: list[str], max_pages: int = 200):
     """Background task that runs the requested collectors."""
     import logging
+    from datetime import datetime, timezone
     logger = logging.getLogger(__name__)
 
-    # Create a new DB session for the background task
     db = SessionLocal()
     try:
         scan = db.query(Scan).filter(Scan.id == scan_id).first()
@@ -81,20 +82,46 @@ def _run_scan_background(scan_id: int, shop_id: int, collectors: list[str]):
             logger.error(f"Scan {scan_id} or shop {shop_id} not found")
             return
 
+        scan.status = "running"
+        scan.started_at = datetime.now(timezone.utc)
+        db.commit()
+
+        # Run WHOIS first (fast, ~2 seconds)
+        if "whois" in collectors:
+            try:
+                run_whois_collector(shop=shop, scan=scan, db=db)
+            except Exception as e:
+                logger.error(f"WHOIS collector failed: {e}")
+
+        # Run SSL check (fast, ~2 seconds)
+        if "ssl" in collectors:
+            try:
+                run_ssl_collector(shop=shop, scan=scan, db=db)
+            except Exception as e:
+                logger.error(f"SSL collector failed: {e}")
+
+        # Run scraper last (slow, crawls pages)
         if "scrape" in collectors:
             try:
-                run_scrape_collector(shop=shop, scan=scan, db=db)
+                run_scrape_collector(shop=shop, scan=scan, db=db, max_pages=max_pages)
             except Exception as e:
                 logger.error(f"Scrape collector failed: {e}")
 
-        # TODO: Add other collectors here as they are built
-        # if "whois" in collectors:
-        #     run_whois_collector(shop=shop, scan=scan, db=db)
-        # if "ssl" in collectors:
-        #     run_ssl_collector(shop=shop, scan=scan, db=db)
-        # if "kvk" in collectors:
-        #     run_kvk_collector(shop=shop, scan=scan, db=db)
+        # If not already marked completed by the last collector
+        if scan.status == "running":
+            scan.status = "completed"
+            scan.completed_at = datetime.now(timezone.utc)
+            scan.error_message = None
+            db.commit()
 
+    except Exception as e:
+        logger.error(f"Scan background task failed: {e}")
+        try:
+            scan.status = "failed"
+            scan.error_message = str(e)
+            db.commit()
+        except Exception:
+            pass
     finally:
         db.close()
 
