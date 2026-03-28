@@ -863,17 +863,93 @@ export default function ShopDetailPage() {
                       {tracker.name}
                     </div>
                     {tracker.ids?.map((idInfo, ii) => (
-                      <div key={ii} style={{ marginBottom: idInfo.online_results?.other_sites?.length > 0 ? 8 : 4 }}>
+                      <div key={ii} style={{ marginBottom: 10 }}>
                         <div style={{
                           fontFamily: 'var(--font-mono)', fontSize: 13,
                           color: 'var(--gold-light)', padding: '2px 0',
                         }}>
                           {idInfo.display_id}
                         </div>
+
+                        {/* Owner info */}
+                        {idInfo.owner && (
+                          <div style={{ paddingLeft: 12, marginTop: 4, marginBottom: 4 }}>
+                            {idInfo.owner.advertiser_name && (
+                              <div style={{ fontSize: 12, color: 'var(--gold)', fontWeight: 500 }}>
+                                👤 Adverteerder: {idInfo.owner.advertiser_name}
+                              </div>
+                            )}
+                            {idInfo.owner.transparency_url && (
+                              <div style={{ fontSize: 10, marginTop: 2 }}>
+                                <a href={idInfo.owner.transparency_url} target="_blank" rel="noopener noreferrer"
+                                   style={{ color: 'var(--text-muted)', textDecoration: 'underline' }}>
+                                  Google Ads Transparency →
+                                </a>
+                              </div>
+                            )}
+                            {idInfo.owner.ad_library_url && (
+                              <div style={{ fontSize: 10, marginTop: 2 }}>
+                                <a href={idInfo.owner.ad_library_url} target="_blank" rel="noopener noreferrer"
+                                   style={{ color: 'var(--text-muted)', textDecoration: 'underline' }}>
+                                  Meta Ad Library →
+                                </a>
+                              </div>
+                            )}
+                            {idInfo.owner.other_domains?.length > 0 && (
+                              <div style={{ marginTop: 4 }}>
+                                <div style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 500, marginBottom: 3 }}>
+                                  Andere sites van deze adverteerder:
+                                </div>
+                                {idInfo.owner.other_domains.slice(0, 5).map((site, si) => (
+                                  <div key={si} style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', padding: '1px 0' }}>
+                                    → {site.domain || site}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {idInfo.owner.other_ads?.length > 0 && (
+                              <div style={{ marginTop: 4 }}>
+                                <div style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 500, marginBottom: 3 }}>
+                                  Andere sites met deze pixel:
+                                </div>
+                                {idInfo.owner.other_ads.slice(0, 5).map((site, si) => (
+                                  <div key={si} style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', padding: '1px 0' }}>
+                                    → {site.domain || site}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* SpyOnWeb results */}
+                        {idInfo.spyonweb?.related_sites?.length > 0 && (
+                          <div style={{ paddingLeft: 12, marginTop: 4 }}>
+                            <div style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 500, marginBottom: 3 }}>
+                              🔗 SpyOnWeb: {idInfo.spyonweb.related_sites.length} gerelateerde site(s)
+                            </div>
+                            {idInfo.spyonweb.related_sites.slice(0, 5).map((site, si) => (
+                              <div key={si} style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', padding: '1px 0' }}>
+                                → {site}
+                              </div>
+                            ))}
+                            {idInfo.spyonweb.related_sites.length > 5 && (
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                + {idInfo.spyonweb.related_sites.length - 5} meer
+                              </div>
+                            )}
+                            <a href={idInfo.spyonweb.spyonweb_url} target="_blank" rel="noopener noreferrer"
+                               style={{ fontSize: 10, color: 'var(--text-muted)', textDecoration: 'underline' }}>
+                              Bekijk op SpyOnWeb →
+                            </a>
+                          </div>
+                        )}
+
+                        {/* DuckDuckGo cross-reference results */}
                         {idInfo.online_results?.other_sites?.length > 0 && (
                           <div style={{ paddingLeft: 12, marginTop: 4 }}>
-                            <div style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 500, marginBottom: 4 }}>
-                              Ook gevonden op {idInfo.online_results.other_sites.length} andere site(s):
+                            <div style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 500, marginBottom: 3 }}>
+                              🔍 Ook gevonden op {idInfo.online_results.other_sites.length} andere site(s):
                             </div>
                             {idInfo.online_results.other_sites.slice(0, 5).map((site, si) => (
                               <div key={si} style={{

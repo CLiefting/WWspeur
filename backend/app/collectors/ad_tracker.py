@@ -45,7 +45,7 @@ AD_PATTERNS = {
         "name": "Google Analytics",
         "patterns": [
             re.compile(r'(UA-\d{4,10}-\d{1,4})', re.IGNORECASE),
-            re.compile(r'(G-[A-Z0-9]{8,12})', re.IGNORECASE),
+            re.compile(r'(G-[A-Z0-9]{10,12})(?![a-z])'),
         ],
         "id_prefix": "",
     },
@@ -144,6 +144,147 @@ def _search_id_online(tracker_id, platform_name):
     return results
 
 
+def _lookup_google_ads_owner(ads_id):
+    """
+    Look up Google Ads advertiser info via Google Ads Transparency Center.
+    Returns advertiser name and their other ads/domains.
+    """
+    result = {
+        "advertiser_name": None,
+        "verified": None,
+        "other_ads": [],
+        "other_domains": [],
+        "transparency_url": None,
+        "error": None,
+    }
+
+    try:
+        session = requests.Session()
+        session.headers.update({"User-Agent": USER_AGENT})
+
+        # Google Ads Transparency Center
+        transparency_url = "https://adstransparency.google.com/?search=AW-{}".format(ads_id)
+        result["transparency_url"] = transparency_url
+
+        # Try to scrape the transparency page
+        response = session.get(transparency_url, timeout=REQUEST_TIMEOUT)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "lxml")
+            # Try to find advertiser name
+            page_text = soup.get_text()
+            # The page is JS-rendered so direct scraping is limited
+            # Instead search DuckDuckGo for the AW- ID + "advertiser"
+            pass
+
+        # Fallback: search for the ads ID to find advertiser
+        search_url = "https://html.duckduckgo.com/html/?q={}".format(
+            quote('"AW-{}" advertiser OR adverteerder OR bedrijf'.format(ads_id))
+        )
+        response = session.get(search_url, timeout=REQUEST_TIMEOUT)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "lxml")
+            for link in soup.select("a.result__a"):
+                title = link.get_text(strip=True)
+                href = link.get("href", "")
+                domain = urlparse(href).netloc.lower().lstrip("www.") if href.startswith("http") else ""
+                if domain and domain not in {"duckduckgo.com", "google.com"}:
+                    result["other_domains"].append({
+                        "domain": domain,
+                        "title": title[:100],
+                        "url": href,
+                    })
+
+            result["other_domains"] = result["other_domains"][:10]
+
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+
+def _lookup_meta_ads_owner(pixel_id):
+    """
+    Look up Meta/Facebook advertiser via Facebook Ad Library.
+    Returns advertiser info and their other ads.
+    """
+    result = {
+        "advertiser_name": None,
+        "page_name": None,
+        "other_ads": [],
+        "ad_library_url": None,
+        "error": None,
+    }
+
+    try:
+        session = requests.Session()
+        session.headers.update({"User-Agent": USER_AGENT})
+
+        # Facebook Ad Library search
+        ad_library_url = "https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=NL&q={}".format(pixel_id)
+        result["ad_library_url"] = ad_library_url
+
+        # Search for the pixel ID to find the business
+        search_url = "https://html.duckduckgo.com/html/?q={}".format(
+            quote('facebook pixel "{}" site OR shop OR webshop'.format(pixel_id))
+        )
+        response = session.get(search_url, timeout=REQUEST_TIMEOUT)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "lxml")
+            for link in soup.select("a.result__a"):
+                title = link.get_text(strip=True)
+                href = link.get("href", "")
+                domain = urlparse(href).netloc.lower().lstrip("www.") if href.startswith("http") else ""
+                if domain and domain not in {"duckduckgo.com", "facebook.com", "google.com"}:
+                    result["other_ads"].append({
+                        "domain": domain,
+                        "title": title[:100],
+                        "url": href,
+                    })
+
+            result["other_ads"] = result["other_ads"][:10]
+
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+
+def _lookup_spyonweb(tracker_id):
+    """
+    Look up a tracker ID on SpyOnWeb to find other sites using the same ID.
+    SpyOnWeb tracks Google Analytics, Adsense, and other IDs across websites.
+    """
+    result = {
+        "related_sites": [],
+        "spyonweb_url": None,
+        "error": None,
+    }
+
+    try:
+        session = requests.Session()
+        session.headers.update({"User-Agent": USER_AGENT})
+
+        spyonweb_url = "https://spyonweb.com/{}".format(quote(tracker_id))
+        result["spyonweb_url"] = spyonweb_url
+
+        response = session.get(spyonweb_url, timeout=REQUEST_TIMEOUT)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "lxml")
+
+            # Extract related domains from SpyOnWeb results
+            for link in soup.select("a[href*='/go/']"):
+                domain = link.get_text(strip=True).lower()
+                if "." in domain and len(domain) > 3:
+                    result["related_sites"].append(domain)
+
+            result["related_sites"] = list(set(result["related_sites"]))[:20]
+
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+
 def detect_ad_trackers(url, search_online=True):
     """
     Detect advertising tracker IDs on a website.
@@ -225,6 +366,41 @@ def detect_ad_trackers(url, search_online=True):
                                 "platform": platform_info["name"],
                                 "other_domains": [s["domain"] for s in online["other_sites"]],
                             })
+
+                    # Owner lookup per platform
+                    id_entry["owner"] = None
+                    id_entry["spyonweb"] = None
+
+                    if search_online:
+                        # Google Ads owner lookup
+                        if platform_key == "google_ads":
+                            owner = _lookup_google_ads_owner(raw_id)
+                            if owner.get("other_domains") or owner.get("advertiser_name"):
+                                id_entry["owner"] = owner
+
+                        # Meta Pixel owner lookup
+                        elif platform_key == "meta_pixel":
+                            owner = _lookup_meta_ads_owner(raw_id)
+                            if owner.get("other_ads") or owner.get("advertiser_name"):
+                                id_entry["owner"] = owner
+
+                        # SpyOnWeb for Analytics/GTM IDs
+                        if platform_key in ("google_analytics", "google_tag_manager"):
+                            spyonweb = _lookup_spyonweb(display_id)
+                            # Filter out current domain
+                            spyonweb["related_sites"] = [
+                                s for s in spyonweb.get("related_sites", [])
+                                if domain not in s
+                            ]
+                            if spyonweb.get("related_sites"):
+                                id_entry["spyonweb"] = spyonweb
+                                # Add to cross references
+                                result["cross_references"].append({
+                                    "id": display_id,
+                                    "platform": platform_info["name"],
+                                    "source": "spyonweb",
+                                    "other_domains": spyonweb["related_sites"],
+                                })
 
                     tracker_entry["ids"].append(id_entry)
                     all_unique_ids.add(display_id)

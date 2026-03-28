@@ -118,7 +118,7 @@ TECH_SIGNATURES = [
     ("analytics", "Google Analytics", [
         r"google-analytics\.com", r"googletagmanager\.com",
         r"gtag\(", r"ga\('create'", r"UA-\d{4,}-\d{1,}",
-        r"G-[A-Z0-9]+",
+        r"G-[A-Z0-9]{10,12}(?![a-z])",
     ], []),
     ("analytics", "Meta Pixel", [
         r"connect\.facebook\.net", r"fbevents\.js", r"fbq\(",

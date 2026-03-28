@@ -167,7 +167,7 @@ def run_ad_tracker_collector(shop: Shop, scan: Scan, db: Session) -> dict:
 
 
 def run_scrape_collector(
-    shop: Shop, scan: Scan, db: Session, max_pages: int = 200,
+    shop: Shop, scan: Scan, db: Session, max_pages: int = 50,
 ) -> dict:
     """Run the HTML scraper collector on a shop."""
     logger.info(f"Starting scrape collector for shop {shop.id}: {shop.url}")
