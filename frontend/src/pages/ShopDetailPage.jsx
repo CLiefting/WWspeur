@@ -151,6 +151,8 @@ export default function ShopDetailPage() {
   const latestAdTracker = shop.ad_tracker_records?.[shop.ad_tracker_records.length - 1];
   const adTrackers = latestAdTracker ? parseJSON(latestAdTracker.trackers) : [];
   const adCrossRefs = latestAdTracker ? parseJSON(latestAdTracker.cross_references) : [];
+  const adRawData = latestAdTracker ? parseJSONObj(latestAdTracker.raw_data) : {};
+  const hackerTarget = adRawData?.hackertarget;
   const kvkRecords = shop.kvk_records || [];
   const latestKvk = kvkRecords.length > 0 ? kvkRecords[kvkRecords.length - 1] : null;
 
@@ -207,6 +209,38 @@ export default function ShopDetailPage() {
               }}
             >
               {isScanning ? scanStatus : 'Opnieuw scannen'}
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  const token = localStorage.getItem('token');
+                  const response = await fetch(`/api/v1/shops/${id}/report`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                  });
+                  if (!response.ok) throw new Error('Download mislukt');
+                  const blob = await response.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `WWSpeur_${shop.domain}_rapport.docx`;
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                } catch (err) {
+                  alert('Rapport downloaden mislukt: ' + err.message);
+                }
+              }}
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                color: 'var(--text-secondary)',
+                fontWeight: 500, fontSize: 13,
+                padding: '10px 20px', borderRadius: 8,
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={e => { e.target.style.borderColor = 'var(--gold-dim)'; e.target.style.color = 'var(--gold)'; }}
+              onMouseLeave={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.color = 'var(--text-secondary)'; }}
+            >
+              📄 Download rapport
             </button>
           </div>
         </div>
@@ -1225,6 +1259,38 @@ export default function ShopDetailPage() {
                   </div>
                 ))}
               </div>
+
+              {/* HackerTarget: all analytics IDs for this domain */}
+              {hackerTarget?.analytics_ids?.length > 0 && (
+                <div style={{
+                  padding: '10px 14px', borderRadius: 8, marginBottom: 10,
+                  background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)',
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 6 }}>
+                    🌐 Alle analytics IDs voor dit domein
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400, marginLeft: 8 }}>
+                      (via HackerTarget)
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gap: 2 }}>
+                    {hackerTarget.analytics_ids.slice(0, 15).map((entry, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 12, fontSize: 11, padding: '2px 0' }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--gold-light)', minWidth: 120 }}>
+                          {entry.id}
+                        </span>
+                        <span style={{ color: 'var(--text-muted)' }}>
+                          {entry.subdomain}
+                        </span>
+                      </div>
+                    ))}
+                    {hackerTarget.analytics_ids.length > 15 && (
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                        + {hackerTarget.analytics_ids.length - 15} meer
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Cross-reference warnings */}
               {adCrossRefs.length > 0 && (

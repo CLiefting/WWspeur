@@ -255,3 +255,72 @@ def delete_shop(
 
     db.delete(shop)
     db.commit()
+
+
+@router.get("/{shop_id}/report")
+def download_report(
+    shop_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Generate and download a Word document report for a shop."""
+    import json
+    import subprocess
+    import tempfile
+    import os
+    from fastapi.responses import FileResponse
+
+    shop = db.query(Shop).filter(Shop.id == shop_id).first()
+    if not shop:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Webwinkel niet gevonden",
+        )
+
+    # Serialize shop data using the detail response schema
+    from app.schemas.scan import ShopDetailResponse
+    shop_data = ShopDetailResponse.from_orm(shop).dict()
+
+    # Convert datetime objects to strings
+    def serialize(obj):
+        if hasattr(obj, 'isoformat'):
+            return obj.isoformat()
+        return obj
+
+    shop_json = json.dumps(shop_data, default=serialize)
+
+    # Generate report using Node.js script
+    report_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "reports")
+    script_path = os.path.join(report_dir, "generate_report.js")
+
+    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        result = subprocess.run(
+            ["node", script_path, tmp_path],
+            input=shop_json,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail="Rapport generatie mislukt: {}".format(result.stderr[:200]),
+            )
+
+        filename = "WWSpeur_{}_{}.docx".format(
+            shop.domain.replace(".", "_"),
+            shop_data.get("created_at", "")[:10],
+        )
+
+        return FileResponse(
+            path=tmp_path,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename=filename,
+        )
+
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=500, detail="Rapport generatie timeout")

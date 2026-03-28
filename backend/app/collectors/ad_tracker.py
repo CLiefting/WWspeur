@@ -285,6 +285,65 @@ def _lookup_spyonweb(tracker_id):
     return result
 
 
+def _hackertarget_domain_lookup(domain):
+    """
+    Look up all analytics IDs associated with a domain via HackerTarget.
+    Returns list of {subdomain, analytics_id} pairs.
+    """
+    result = {
+        "analytics_ids": [],
+        "error": None,
+    }
+
+    try:
+        response = requests.get(
+            "https://api.hackertarget.com/analyticslookup/?q={}".format(quote(domain)),
+            timeout=REQUEST_TIMEOUT,
+        )
+        if response.status_code == 200 and "error" not in response.text.lower():
+            for line in response.text.strip().split("\n"):
+                parts = line.strip().split(",")
+                if len(parts) == 2:
+                    result["analytics_ids"].append({
+                        "subdomain": parts[0].strip(),
+                        "id": parts[1].strip(),
+                    })
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+
+def _hackertarget_reverse_lookup(analytics_id):
+    """
+    Reverse lookup: find all domains using the same analytics ID.
+    Works for UA- and GTM- IDs. GA4 (G-) IDs are not supported.
+    """
+    result = {
+        "related_domains": [],
+        "error": None,
+    }
+
+    # Only works for UA- and GTM- IDs
+    if not (analytics_id.startswith("UA-") or analytics_id.startswith("GTM-")):
+        return result
+
+    try:
+        response = requests.get(
+            "https://api.hackertarget.com/analyticslookup/?q={}".format(quote(analytics_id)),
+            timeout=REQUEST_TIMEOUT,
+        )
+        if response.status_code == 200 and "error" not in response.text.lower():
+            for line in response.text.strip().split("\n"):
+                domain = line.strip()
+                if domain and "." in domain:
+                    result["related_domains"].append(domain)
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+
 def detect_ad_trackers(url, search_online=True):
     """
     Detect advertising tracker IDs on a website.
@@ -309,6 +368,7 @@ def detect_ad_trackers(url, search_online=True):
         "total_trackers": 0,
         "total_unique_ids": 0,
         "cross_references": [],  # [{id, platform, other_domains: []}]
+        "hackertarget": None,  # domain analytics lookup
         "error": None,
     }
 
@@ -416,6 +476,34 @@ def detect_ad_trackers(url, search_online=True):
 
         result["total_trackers"] = len(result["trackers"])
         result["total_unique_ids"] = len(all_unique_ids)
+
+        # HackerTarget: get all analytics IDs for this domain + reverse lookups
+        if search_online:
+            ht_domain = _hackertarget_domain_lookup(domain)
+            result["hackertarget"] = ht_domain
+
+            # Collect all UA-/GTM- IDs (from our detection + HackerTarget)
+            all_ua_ids = set()
+            for ad in result["all_ids"]:
+                aid = ad.get("display_id", ad.get("id", ""))
+                if aid.startswith("UA-") or aid.startswith("GTM-"):
+                    all_ua_ids.add(aid)
+            for ht_entry in ht_domain.get("analytics_ids", []):
+                aid = ht_entry.get("id", "")
+                if aid.startswith("UA-") or aid.startswith("GTM-"):
+                    all_ua_ids.add(aid)
+
+            # Reverse lookup each UA-/GTM- ID
+            for ua_id in list(all_ua_ids)[:3]:  # Max 3 to avoid rate limiting
+                reverse = _hackertarget_reverse_lookup(ua_id)
+                related = [d for d in reverse.get("related_domains", []) if domain not in d]
+                if related:
+                    result["cross_references"].append({
+                        "id": ua_id,
+                        "platform": "Google Analytics" if ua_id.startswith("UA-") else "Google Tag Manager",
+                        "source": "hackertarget",
+                        "other_domains": related,
+                    })
 
         logger.info(
             "Ad tracker detectie voltooid voor %s: %d platforms, %d unieke ID's, %d cross-refs",

@@ -438,7 +438,7 @@ def lookup_kvk(kvk_numbers: List[str], domain: str) -> dict:
     logger.info(
         "KVK lookup voltooid: %d gevonden, %d actief, domein-match: %s",
         results["total_found"], results["total_active"],
-        results.get("domain_match", {}).get("match", "n/a"),
+        (results.get("domain_match") or {}).get("match", "n/a"),
     )
 
     return results
