@@ -164,3 +164,49 @@ class KvKRecord(Base, TimestampMixin):
 
     def __repr__(self):
         return f"<KvKRecord(id={self.id}, shop_id={self.shop_id}, kvk_number='{self.kvk_number}')>"
+
+
+class DnsHttpRecord(Base, TimestampMixin):
+    """DNS records, HTTP security headers, and redirect chain data."""
+    __tablename__ = "dns_http_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id"), nullable=False)
+    scan_id = Column(Integer, ForeignKey("scans.id"), nullable=True)
+
+    # DNS
+    a_records = Column(Text, nullable=True)       # JSON list
+    mx_records = Column(Text, nullable=True)      # JSON list
+    txt_records = Column(Text, nullable=True)      # JSON list
+    ns_records = Column(Text, nullable=True)       # JSON list
+    has_spf = Column(Boolean, nullable=True)
+    has_dmarc = Column(Boolean, nullable=True)
+    has_mx = Column(Boolean, nullable=True)
+    spf_record = Column(Text, nullable=True)
+    dmarc_record = Column(Text, nullable=True)
+
+    # HTTP headers
+    http_status_code = Column(Integer, nullable=True)
+    server_header = Column(String(255), nullable=True)
+    powered_by = Column(String(255), nullable=True)
+    security_score = Column(Integer, nullable=True)  # 0-100
+    security_headers_present = Column(Text, nullable=True)  # JSON
+    security_headers_missing = Column(Text, nullable=True)  # JSON
+
+    # Redirects
+    redirect_count = Column(Integer, nullable=True)
+    redirect_chain = Column(Text, nullable=True)   # JSON
+    http_to_https = Column(Boolean, nullable=True)
+    domain_changed = Column(Boolean, nullable=True)
+    final_url = Column(String(2048), nullable=True)
+
+    # Source tracking
+    source = Column(String(255), nullable=False, default="dns_http_check")
+    raw_data = Column(Text, nullable=True)
+    collected_at = Column(DateTime, nullable=False)
+
+    # Relationships
+    shop = relationship("Shop", back_populates="dns_http_records")
+
+    def __repr__(self):
+        return f"<DnsHttpRecord(id={self.id}, shop_id={self.shop_id}, security_score={self.security_score})>"

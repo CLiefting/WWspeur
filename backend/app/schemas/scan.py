@@ -134,6 +134,37 @@ class KvKResponse(BaseModel):
 
 # ── Combined shop detail ──
 
+class DnsHttpResponse(BaseModel):
+    """DNS/HTTP/redirect record response."""
+    id: int
+    shop_id: int
+    a_records: Optional[str]
+    mx_records: Optional[str]
+    txt_records: Optional[str]
+    ns_records: Optional[str]
+    has_spf: Optional[bool]
+    has_dmarc: Optional[bool]
+    has_mx: Optional[bool]
+    spf_record: Optional[str]
+    dmarc_record: Optional[str]
+    http_status_code: Optional[int]
+    server_header: Optional[str]
+    powered_by: Optional[str]
+    security_score: Optional[int]
+    security_headers_present: Optional[str]
+    security_headers_missing: Optional[str]
+    redirect_count: Optional[int]
+    redirect_chain: Optional[str]
+    http_to_https: Optional[bool]
+    domain_changed: Optional[bool]
+    final_url: Optional[str]
+    source: str
+    collected_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class ShopDetailResponse(BaseModel):
     """Full shop details including all collector results."""
     id: int
@@ -150,6 +181,7 @@ class ShopDetailResponse(BaseModel):
     ssl_records: List[SSLResponse] = []
     scrape_records: List[ScrapeResponse] = []
     kvk_records: List[KvKResponse] = []
+    dns_http_records: List[DnsHttpResponse] = []
 
     class Config:
         from_attributes = True

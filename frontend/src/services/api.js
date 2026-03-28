@@ -170,10 +170,15 @@ export const scans = {
     if (shopId) params.set('shop_id', shopId);
     return request('/scans/?' + params);
   },
-  async pollUntilDone(scanId, onUpdate, onProgress, intervalMs = 1500) {
+  async pollUntilDone(scanId, onUpdate, onProgress, intervalMs = 1500, shouldAbort = null) {
     while (true) {
+      // Check if polling should stop
+      if (shouldAbort && shouldAbort()) {
+        console.debug('[API] Polling aborted');
+        return null;
+      }
+
       try {
-        // Get progress data
         const progressData = await this.getProgress(scanId);
         if (onProgress) onProgress(progressData);
         
@@ -183,7 +188,6 @@ export const scans = {
           return scan;
         }
       } catch (e) {
-        // Fallback to regular polling
         const scan = await this.get(scanId);
         if (onUpdate) onUpdate(scan);
         if (['completed', 'failed', 'partial'].includes(scan.status)) return scan;

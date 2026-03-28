@@ -11,6 +11,7 @@ from app.models.scan import Scan
 from app.collectors.scraper import crawl_website, save_crawl_result
 from app.collectors.whois_lookup import lookup_whois, save_whois_result
 from app.collectors.ssl_check import check_ssl, save_ssl_result
+from app.collectors.dns_http import check_dns_http_redirects, save_dns_http_result
 from app.services.progress import update_scan_progress
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,28 @@ def run_ssl_collector(shop: Shop, scan: Scan, db: Session) -> dict:
 
     except Exception as e:
         logger.error(f"SSL collector failed for shop {shop.id}: {e}")
+        return {"error": str(e)}
+
+
+def run_dns_http_collector(shop: Shop, scan: Scan, db: Session) -> dict:
+    """Run the DNS/HTTP/redirect collector on a shop."""
+    logger.info(f"Starting DNS/HTTP collector for shop {shop.id}: {shop.url}")
+
+    try:
+        update_scan_progress(scan, db, {
+            "collector": "dns_http",
+            "status": "DNS records en HTTP headers controleren...",
+        })
+
+        result = check_dns_http_redirects(shop.url)
+        save_dns_http_result(result, shop.id, scan.id, db)
+        _mark_collector_done(scan, "dns_http", db)
+
+        logger.info(f"DNS/HTTP collector completed for shop {shop.id}")
+        return result
+
+    except Exception as e:
+        logger.error(f"DNS/HTTP collector failed for shop {shop.id}: {e}")
         return {"error": str(e)}
 
 

@@ -43,7 +43,7 @@ export default function DashboardPage() {
     setScanProgress(null);
     abortRef.current = false;
 
-    const scan = await scans.create(shopId, ['whois', 'ssl', 'scrape'], maxPages);
+    const scan = await scans.create(shopId, ['whois', 'ssl', 'dns_http', 'scrape'], maxPages);
     setCurrentScanId(scan.id);
 
     await scans.pollUntilDone(

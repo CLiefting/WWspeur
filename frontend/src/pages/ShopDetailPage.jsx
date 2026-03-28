@@ -118,20 +118,29 @@ export default function ShopDetailPage() {
   const latestScrape = shop.scrape_records?.[shop.scrape_records.length - 1];
   const latestWhois = shop.whois_records?.[shop.whois_records.length - 1];
   const latestSSL = shop.ssl_records?.[shop.ssl_records.length - 1];
+  const latestDnsHttp = shop.dns_http_records?.[shop.dns_http_records.length - 1];
 
-  // Parse JSON fields safely
   const parseJSON = (str) => {
     if (!str) return [];
     try { return JSON.parse(str); } catch { return []; }
+  };
+  const parseJSONObj = (str) => {
+    if (!str) return {};
+    try { return JSON.parse(str); } catch { return {}; }
   };
 
   const emails = latestScrape ? parseJSON(latestScrape.emails_found) : [];
   const phones = latestScrape ? parseJSON(latestScrape.phones_found) : [];
   const addresses = latestScrape ? parseJSON(latestScrape.addresses_found) : [];
-  const socialMedia = latestScrape ? parseJSON(latestScrape.social_media_links) : {};
+  const socialMedia = latestScrape ? parseJSONObj(latestScrape.social_media_links) : {};
   const externalLinks = latestScrape ? parseJSON(latestScrape.external_links) : [];
   const nameServers = latestWhois ? parseJSON(latestWhois.name_servers) : [];
   const sanDomains = latestSSL ? parseJSON(latestSSL.san_domains) : [];
+  const dnsARecords = latestDnsHttp ? parseJSON(latestDnsHttp.a_records) : [];
+  const dnsMxRecords = latestDnsHttp ? parseJSON(latestDnsHttp.mx_records) : [];
+  const secHeadersPresent = latestDnsHttp ? parseJSON(latestDnsHttp.security_headers_present) : [];
+  const secHeadersMissing = latestDnsHttp ? parseJSON(latestDnsHttp.security_headers_missing) : [];
+  const redirectChain = latestDnsHttp ? parseJSON(latestDnsHttp.redirect_chain) : [];
 
   const riskColors = {
     unknown: 'var(--text-muted)', low: 'var(--success)',
@@ -192,7 +201,7 @@ export default function ShopDetailPage() {
       </div>
 
       {/* No data yet */}
-      {!latestScrape && !latestWhois && !latestSSL && (
+      {!latestScrape && !latestWhois && !latestSSL && !latestDnsHttp && (
         <div style={{
           textAlign: 'center', padding: '60px 0',
           color: 'var(--text-muted)',
@@ -204,7 +213,7 @@ export default function ShopDetailPage() {
       )}
 
       {/* Results */}
-      {(latestScrape || latestWhois || latestSSL) && (
+      {(latestScrape || latestWhois || latestSSL || latestDnsHttp) && (
         <>
           {/* Stats row */}
           <div style={{
@@ -446,6 +455,168 @@ export default function ShopDetailPage() {
               )}
             </div>
           </div>
+
+          {/* DNS / HTTP Headers / Redirects */}
+          {latestDnsHttp && (
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+
+                {/* DNS card */}
+                <div style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10, padding: '16px 20px',
+                }}>
+                  <div style={{
+                    fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+                    textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12,
+                  }}>
+                    📡 DNS records
+                  </div>
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>A records</span>
+                      <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+                        {dnsARecords.length > 0 ? dnsARecords[0] : '—'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>MX (e-mail)</span>
+                      <StatusDot active={latestDnsHttp.has_mx} />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>SPF</span>
+                      <StatusDot active={latestDnsHttp.has_spf} />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>DMARC</span>
+                      <StatusDot active={latestDnsHttp.has_dmarc} />
+                    </div>
+                    {dnsMxRecords.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4, marginTop: 4 }}>MX servers</div>
+                        {dnsMxRecords.slice(0, 3).map((mx, i) => (
+                          <div key={i} style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+                            {mx.host || mx}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* HTTP Security Headers card */}
+                <div style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10, padding: '16px 20px',
+                }}>
+                  <div style={{
+                    fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+                    textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12,
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  }}>
+                    <span>🛡️ Security headers</span>
+                    <span style={{
+                      fontSize: 16, fontWeight: 700,
+                      color: latestDnsHttp.security_score >= 70 ? 'var(--success)' :
+                             latestDnsHttp.security_score >= 40 ? 'var(--gold)' : 'var(--danger)',
+                    }}>
+                      {latestDnsHttp.security_score}%
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {secHeadersPresent.map((h, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                        <span style={{ color: 'var(--success)' }}>✓</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>{h.name}</span>
+                      </div>
+                    ))}
+                    {secHeadersMissing.map((h, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                        <span style={{ color: 'var(--danger)' }}>✗</span>
+                        <span style={{ color: 'var(--text-muted)' }}>{h.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {latestDnsHttp.server_header && (
+                    <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-muted)' }}>
+                      Server: <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{latestDnsHttp.server_header}</span>
+                    </div>
+                  )}
+                  {latestDnsHttp.powered_by && (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      Powered by: <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{latestDnsHttp.powered_by}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Redirects card */}
+                <div style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10, padding: '16px 20px',
+                }}>
+                  <div style={{
+                    fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+                    textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12,
+                  }}>
+                    🔀 Redirects
+                  </div>
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aantal redirects</span>
+                      <span style={{
+                        fontSize: 13, fontFamily: 'var(--font-mono)',
+                        color: latestDnsHttp.redirect_count > 3 ? 'var(--danger)' : 'var(--gold-light)',
+                      }}>
+                        {latestDnsHttp.redirect_count}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>HTTP → HTTPS</span>
+                      <StatusDot active={latestDnsHttp.http_to_https} />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Domein wijzigt</span>
+                      <span style={{
+                        fontSize: 11, padding: '2px 10px', borderRadius: 20,
+                        background: latestDnsHttp.domain_changed ? 'rgba(248, 113, 113, 0.15)' : 'rgba(74, 222, 128, 0.15)',
+                        color: latestDnsHttp.domain_changed ? 'var(--danger)' : 'var(--success)',
+                        fontWeight: 600,
+                      }}>
+                        {latestDnsHttp.domain_changed ? 'Ja' : 'Nee'}
+                      </span>
+                    </div>
+                    {latestDnsHttp.final_url && (
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4, marginTop: 4 }}>Eindbestemming</div>
+                        <div style={{
+                          fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {latestDnsHttp.final_url}
+                        </div>
+                      </div>
+                    )}
+                    {redirectChain.length > 1 && (
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4, marginTop: 4 }}>Redirect keten</div>
+                        {redirectChain.map((step, i) => (
+                          <div key={i} style={{
+                            fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)',
+                            padding: '2px 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {step.status_code} → {step.url}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Data cards */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
