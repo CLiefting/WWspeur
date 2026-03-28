@@ -12,11 +12,11 @@ from app.models.user import User
 from app.models.shop import Shop
 from app.models.scan import Scan, ScanStatus
 from app.schemas.scan import ScanCreate, ScanResponse
-from app.services.scan_service import run_scrape_collector, run_whois_collector, run_ssl_collector, run_dns_http_collector, run_tech_collector, run_trustmark_collector
+from app.services.scan_service import run_scrape_collector, run_whois_collector, run_ssl_collector, run_dns_http_collector, run_tech_collector, run_trustmark_collector, run_ad_tracker_collector
 
 router = APIRouter()
 
-VALID_COLLECTORS = {"whois", "ssl", "scrape", "kvk", "dns_http", "tech", "trustmark"}
+VALID_COLLECTORS = {"whois", "ssl", "scrape", "kvk", "dns_http", "tech", "trustmark", "ad_tracker"}
 
 
 @router.post("/", response_model=ScanResponse, status_code=status.HTTP_201_CREATED)
@@ -67,7 +67,7 @@ def create_scan(
     return scan
 
 
-def _run_scan_background(scan_id: int, shop_id: int, collectors: list[str], max_pages: int = 50):
+def _run_scan_background(scan_id: int, shop_id: int, collectors: list[str], max_pages: int = 200):
     """Background task that runs the requested collectors."""
     import logging
     from datetime import datetime, timezone
@@ -123,6 +123,13 @@ def _run_scan_background(scan_id: int, shop_id: int, collectors: list[str], max_
                 run_trustmark_collector(shop=shop, scan=scan, db=db, claimed_trustmarks=claimed)
             except Exception as e:
                 logger.error(f"Trustmark verification failed: {e}")
+
+        # Run ad tracker detection (moderate, ~15 seconds with online search)
+        if "ad_tracker" in collectors:
+            try:
+                run_ad_tracker_collector(shop=shop, scan=scan, db=db)
+            except Exception as e:
+                logger.error(f"Ad tracker detection failed: {e}")
 
         # Run scraper last (slow, crawls pages)
         if "scrape" in collectors:

@@ -14,6 +14,7 @@ from app.collectors.ssl_check import check_ssl, save_ssl_result
 from app.collectors.dns_http import check_dns_http_redirects, save_dns_http_result
 from app.collectors.tech_detect import detect_technologies, save_tech_result
 from app.collectors.trustmark_verify import verify_all_trustmarks, save_trustmark_result
+from app.collectors.ad_tracker import detect_ad_trackers, save_ad_tracker_result
 from app.services.progress import update_scan_progress
 
 logger = logging.getLogger(__name__)
@@ -143,8 +144,30 @@ def run_trustmark_collector(shop: Shop, scan: Scan, db: Session, claimed_trustma
         return {"error": str(e)}
 
 
+def run_ad_tracker_collector(shop: Shop, scan: Scan, db: Session) -> dict:
+    """Run the ad tracker detection collector."""
+    logger.info(f"Starting ad tracker detection for shop {shop.id}: {shop.url}")
+
+    try:
+        update_scan_progress(scan, db, {
+            "collector": "ad_tracker",
+            "status": "Advertentie trackers detecteren...",
+        })
+
+        result = detect_ad_trackers(shop.url, search_online=True)
+        save_ad_tracker_result(result, shop.id, scan.id, db)
+        _mark_collector_done(scan, "ad_tracker", db)
+
+        logger.info(f"Ad tracker detection completed for shop {shop.id}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Ad tracker detection failed for shop {shop.id}: {e}")
+        return {"error": str(e)}
+
+
 def run_scrape_collector(
-    shop: Shop, scan: Scan, db: Session, max_pages: int = 50,
+    shop: Shop, scan: Scan, db: Session, max_pages: int = 200,
 ) -> dict:
     """Run the HTML scraper collector on a shop."""
     logger.info(f"Starting scrape collector for shop {shop.id}: {shop.url}")

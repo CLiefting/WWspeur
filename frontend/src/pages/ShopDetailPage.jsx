@@ -148,6 +148,9 @@ export default function ShopDetailPage() {
   const techCategories = latestTech ? parseJSONObj(latestTech.technologies) : {};
   const latestTrustmark = shop.trustmark_records?.[shop.trustmark_records.length - 1];
   const trustmarkVerifications = latestTrustmark ? parseJSON(latestTrustmark.verifications) : [];
+  const latestAdTracker = shop.ad_tracker_records?.[shop.ad_tracker_records.length - 1];
+  const adTrackers = latestAdTracker ? parseJSON(latestAdTracker.trackers) : [];
+  const adCrossRefs = latestAdTracker ? parseJSON(latestAdTracker.cross_references) : [];
 
   const riskColors = {
     unknown: 'var(--text-muted)', low: 'var(--success)',
@@ -828,6 +831,104 @@ export default function ShopDetailPage() {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* Ad Tracker Detection */}
+          {latestAdTracker && adTrackers.length > 0 && (
+            <div style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
+              borderRadius: 10, padding: '16px 20px', marginBottom: 24,
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 14,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              }}>
+                <span>📢 Advertentie trackers</span>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)', textTransform: 'none', fontWeight: 400 }}>
+                  {latestAdTracker.total_unique_ids} ID('s) op {latestAdTracker.total_trackers} platform(s)
+                </span>
+              </div>
+
+              {/* Tracker IDs per platform */}
+              <div style={{ display: 'grid', gap: 10, marginBottom: adCrossRefs.length > 0 ? 16 : 0 }}>
+                {adTrackers.map((tracker, ti) => (
+                  <div key={ti} style={{
+                    padding: '10px 14px', borderRadius: 8,
+                    background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)',
+                  }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 6 }}>
+                      {tracker.name}
+                    </div>
+                    {tracker.ids?.map((idInfo, ii) => (
+                      <div key={ii} style={{ marginBottom: idInfo.online_results?.other_sites?.length > 0 ? 8 : 4 }}>
+                        <div style={{
+                          fontFamily: 'var(--font-mono)', fontSize: 13,
+                          color: 'var(--gold-light)', padding: '2px 0',
+                        }}>
+                          {idInfo.display_id}
+                        </div>
+                        {idInfo.online_results?.other_sites?.length > 0 && (
+                          <div style={{ paddingLeft: 12, marginTop: 4 }}>
+                            <div style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 500, marginBottom: 4 }}>
+                              Ook gevonden op {idInfo.online_results.other_sites.length} andere site(s):
+                            </div>
+                            {idInfo.online_results.other_sites.slice(0, 5).map((site, si) => (
+                              <div key={si} style={{
+                                fontSize: 11, color: 'var(--text-muted)',
+                                fontFamily: 'var(--font-mono)', padding: '1px 0',
+                              }}>
+                                → {site.domain}
+                              </div>
+                            ))}
+                            {idInfo.online_results.other_sites.length > 5 && (
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                + {idInfo.online_results.other_sites.length - 5} meer
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+
+              {/* Cross-reference warnings */}
+              {adCrossRefs.length > 0 && (
+                <div style={{
+                  padding: '12px 14px', borderRadius: 8,
+                  background: 'rgba(248, 113, 113, 0.08)',
+                  border: '1px solid rgba(248, 113, 113, 0.3)',
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--danger)', marginBottom: 8 }}>
+                    ⚠️ Cross-referenties gevonden
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                    Dezelfde advertentie-ID('s) zijn ook gevonden op andere websites.
+                    Dit kan betekenen dat dezelfde eigenaar meerdere webwinkels beheert.
+                  </div>
+                  {adCrossRefs.map((xref, xi) => (
+                    <div key={xi} style={{ marginBottom: 6 }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--gold)' }}>
+                        {xref.id}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>
+                        ({xref.platform})
+                      </span>
+                      <div style={{ paddingLeft: 12 }}>
+                        {xref.other_domains?.slice(0, 5).map((d, di) => (
+                          <div key={di} style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--danger)' }}>
+                            → {d}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

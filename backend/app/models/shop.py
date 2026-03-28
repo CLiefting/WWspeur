@@ -47,6 +47,7 @@ class Shop(Base, TimestampMixin):
     dns_http_records = relationship("DnsHttpRecord", back_populates="shop", cascade="all, delete-orphan")
     tech_records = relationship("TechRecord", back_populates="shop", cascade="all, delete-orphan")
     trustmark_records = relationship("TrustmarkRecord", back_populates="shop", cascade="all, delete-orphan")
+    ad_tracker_records = relationship("AdTrackerRecord", back_populates="shop", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Shop(id={self.id}, domain='{self.domain}', risk_level='{self.risk_level}')>"

@@ -17,7 +17,7 @@ class ScanCreate(BaseModel):
         description="Which collectors to run: whois, ssl, scrape, kvk"
     )
     max_pages: int = Field(
-        default=50,
+        default=200,
         ge=10,
         le=2000,
         description="Maximum aantal pagina's om te scrapen (10-2000)"
@@ -222,6 +222,24 @@ class ShopDetailResponse(BaseModel):
     dns_http_records: List[DnsHttpResponse] = []
     tech_records: List[TechResponse] = []
     trustmark_records: List[TrustmarkResponse] = []
+    ad_tracker_records: List['AdTrackerResponse'] = []
+
+    class Config:
+        from_attributes = True
+
+
+class AdTrackerResponse(BaseModel):
+    """Ad tracker detection record response."""
+    id: int
+    shop_id: int
+    trackers: Optional[str]
+    all_ids: Optional[str]
+    all_ids_flat: Optional[str]
+    total_trackers: Optional[int]
+    total_unique_ids: Optional[int]
+    cross_references: Optional[str]
+    source: str
+    collected_at: datetime
 
     class Config:
         from_attributes = True

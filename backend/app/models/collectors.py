@@ -266,3 +266,28 @@ class TrustmarkRecord(Base, TimestampMixin):
 
     def __repr__(self):
         return f"<TrustmarkRecord(id={self.id}, shop_id={self.shop_id}, verified={self.total_verified})>"
+
+
+class AdTrackerRecord(Base, TimestampMixin):
+    """Advertising tracker ID detection and cross-reference results."""
+    __tablename__ = "ad_tracker_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id"), nullable=False)
+    scan_id = Column(Integer, ForeignKey("scans.id"), nullable=True)
+
+    trackers = Column(Text, nullable=True)          # JSON: full tracker results
+    all_ids = Column(Text, nullable=True)            # JSON: [{platform, name, id, display_id}]
+    all_ids_flat = Column(Text, nullable=True)       # Space-separated IDs for searching
+    total_trackers = Column(Integer, nullable=True)
+    total_unique_ids = Column(Integer, nullable=True)
+    cross_references = Column(Text, nullable=True)   # JSON: cross-ref results
+
+    source = Column(String(255), nullable=False, default="ad_tracker_detection")
+    raw_data = Column(Text, nullable=True)
+    collected_at = Column(DateTime, nullable=False)
+
+    shop = relationship("Shop", back_populates="ad_tracker_records")
+
+    def __repr__(self):
+        return f"<AdTrackerRecord(id={self.id}, shop_id={self.shop_id}, ids={self.total_unique_ids})>"
