@@ -14,6 +14,10 @@ export default function DashboardPage() {
   const [error, setError] = useState('');
   const [csvResult, setCsvResult] = useState(null);
   const [maxPages, setMaxPages] = useState(200);
+  const [scanningUrl, setScanningUrl] = useState('');
+  const [currentScanId, setCurrentScanId] = useState(null);
+  const [currentShopId, setCurrentShopId] = useState(null);
+  const abortRef = useRef(false);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
 
@@ -31,47 +35,60 @@ export default function DashboardPage() {
 
   const [scanProgress, setScanProgress] = useState(null);
 
+  const _runScanWithPolling = async (shopId, shopUrl) => {
+    setIsScanning(shopId);
+    setCurrentShopId(shopId);
+    setScanningUrl(shopUrl);
+    setScanStatus('Scan gestart...');
+    setScanProgress(null);
+    abortRef.current = false;
+
+    const scan = await scans.create(shopId, ['whois', 'ssl', 'scrape'], maxPages);
+    setCurrentScanId(scan.id);
+
+    await scans.pollUntilDone(
+      scan.id,
+      (s) => {
+        if (s.status === 'completed') setScanStatus('Scan voltooid!');
+        else if (s.status === 'failed') setScanStatus('Scan mislukt');
+      },
+      (progressData) => {
+        if (progressData.progress && Object.keys(progressData.progress).length > 0) {
+          setScanProgress(progressData.progress);
+          const p = progressData.progress;
+          setScanStatus(
+            `Pagina ${p.pages_crawled || 0}/${p.max_pages || '?'} — ` +
+            `${p.emails_found || 0} emails, ${p.phones_found || 0} tel, ` +
+            `${p.kvk_found || 0} KvK`
+          );
+        }
+      },
+      1500,
+      () => abortRef.current,
+    );
+
+    return shopId;
+  };
+
   const handleAddAndScan = async () => {
     if (!url.trim()) return;
     setError('');
     setIsAdding(true);
-    setScanProgress(null);
 
     try {
       const shop = await shops.create(url);
+      const scanUrl = shop.url || url;
       setUrl('');
-      
-      setIsScanning(shop.id);
-      setScanStatus('Scan gestart...');
-      
-      const scan = await scans.create(shop.id, ['whois', 'ssl', 'scrape'], maxPages);
-      
-      await scans.pollUntilDone(
-        scan.id,
-        (s) => {
-          if (s.status === 'completed') setScanStatus('Scan voltooid!');
-          else if (s.status === 'failed') setScanStatus('Scan mislukt');
-        },
-        (progressData) => {
-          if (progressData.progress && Object.keys(progressData.progress).length > 0) {
-            setScanProgress(progressData.progress);
-            const p = progressData.progress;
-            setScanStatus(
-              `Pagina ${p.pages_crawled || 0}/${p.max_pages || '?'} — ` +
-              `${p.emails_found || 0} emails, ${p.phones_found || 0} tel, ` +
-              `${p.kvk_found || 0} KvK`
-            );
-          }
-        },
-      );
 
-      setIsScanning(null);
-      setScanStatus('');
-      setScanProgress(null);
-      await loadShops();
-      
-      navigate(`/shop/${shop.id}`);
+      const shopId = await _runScanWithPolling(shop.id, scanUrl);
 
+      if (!abortRef.current) {
+        setIsScanning(null);
+        setScanStatus('');
+        setScanProgress(null);
+        await loadShops();
+        navigate(`/shop/${shopId}`);
+      }
     } catch (err) {
       setError(err.detail || err.message);
       setIsScanning(null);
@@ -83,36 +100,44 @@ export default function DashboardPage() {
   };
 
   const handleScanExisting = async (shopId) => {
-    setIsScanning(shopId);
-    setScanStatus('Scan gestart...');
-    setScanProgress(null);
+    const shop = shopList.find(s => s.id === shopId);
+    const shopUrl = shop?.url || shop?.domain || '';
 
     try {
-      const scan = await scans.create(shopId, ['whois', 'ssl', 'scrape'], maxPages);
-      await scans.pollUntilDone(
-        scan.id,
-        (s) => {
-          if (s.status === 'completed') setScanStatus('Scan voltooid!');
-          else if (s.status === 'failed') setScanStatus('Scan mislukt');
-        },
-        (progressData) => {
-          if (progressData.progress && Object.keys(progressData.progress).length > 0) {
-            setScanProgress(progressData.progress);
-            const p = progressData.progress;
-            setScanStatus(
-              `Pagina ${p.pages_crawled || 0}/${p.max_pages || '?'} — ` +
-              `${p.emails_found || 0} emails, ${p.phones_found || 0} tel`
-            );
-          }
-        },
-      );
-      navigate(`/shop/${shopId}`);
+      await _runScanWithPolling(shopId, shopUrl);
+      if (!abortRef.current) {
+        navigate(`/shop/${shopId}`);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
-      setIsScanning(null);
-      setScanStatus('');
-      setScanProgress(null);
+      if (!abortRef.current) {
+        setIsScanning(null);
+        setScanStatus('');
+        setScanProgress(null);
+      }
+    }
+  };
+
+  const handleStopScan = () => {
+    abortRef.current = true;
+    setIsScanning(null);
+    setScanStatus('');
+    setScanProgress(null);
+    setScanningUrl('');
+    setCurrentScanId(null);
+    setCurrentShopId(null);
+    setIsAdding(false);
+    loadShops();
+  };
+
+  const handleRestartScan = async () => {
+    const shopId = currentShopId;
+    const shopUrl = scanningUrl;
+    handleStopScan();
+    if (shopId) {
+      // Small delay to let state reset
+      setTimeout(() => handleScanExisting(shopId), 100);
     }
   };
 
@@ -280,13 +305,75 @@ export default function DashboardPage() {
           borderRadius: 10, padding: '18px 22px',
           marginBottom: 24,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: scanProgress ? 14 : 0 }}>
+          {/* URL being scanned + controls */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+                Onderzoekt
+              </div>
+              <div style={{
+                fontFamily: 'var(--font-mono)', fontSize: 16, color: 'var(--gold)',
+              }}>
+                {scanningUrl}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={handleStopScan}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--danger)',
+                  color: 'var(--danger)',
+                  fontSize: 12, fontWeight: 500,
+                  padding: '6px 14px', borderRadius: 6,
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={e => { e.target.style.background = 'rgba(248,113,113,0.15)'; }}
+                onMouseLeave={e => { e.target.style.background = 'transparent'; }}
+              >
+                Stop
+              </button>
+              <button
+                onClick={handleRestartScan}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--gold-dim)',
+                  color: 'var(--gold)',
+                  fontSize: 12, fontWeight: 500,
+                  padding: '6px 14px', borderRadius: 6,
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={e => { e.target.style.background = 'var(--gold-glow)'; }}
+                onMouseLeave={e => { e.target.style.background = 'transparent'; }}
+              >
+                Herstart
+              </button>
+              <button
+                onClick={() => currentShopId && navigate(`/shop/${currentShopId}`)}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-secondary)',
+                  fontSize: 12, fontWeight: 500,
+                  padding: '6px 14px', borderRadius: 6,
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={e => { e.target.style.borderColor = 'var(--gold-dim)'; e.target.style.color = 'var(--gold)'; }}
+                onMouseLeave={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.color = 'var(--text-secondary)'; }}
+              >
+                Bekijk resultaten
+              </button>
+            </div>
+          </div>
+
+          {/* Status line */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <div style={{
-              width: 10, height: 10, borderRadius: '50%',
+              width: 8, height: 8, borderRadius: '50%',
               background: 'var(--gold)',
               animation: 'pulse 1.5s ease-in-out infinite',
             }} />
-            <span style={{ fontSize: 13, color: 'var(--gold-light)', flex: 1 }}>{scanStatus}</span>
+            <span style={{ fontSize: 13, color: 'var(--gold-light)' }}>{scanStatus}</span>
           </div>
           
           {scanProgress && (
@@ -324,7 +411,7 @@ export default function DashboardPage() {
                 ))}
               </div>
               
-              {/* Current URL */}
+              {/* Current URL being scraped */}
               {scanProgress.current_url && (
                 <div style={{
                   fontSize: 11, color: 'var(--text-muted)',
@@ -332,7 +419,7 @@ export default function DashboardPage() {
                   marginTop: 10, overflow: 'hidden',
                   textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>
-                  {scanProgress.current_url}
+                  ↳ {scanProgress.current_url}
                 </div>
               )}
             </>
@@ -425,7 +512,7 @@ export default function DashboardPage() {
                     {shop.name || shop.url}
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {riskBadge(shop.risk_level)}
                   <button
                     onClick={(e) => { e.stopPropagation(); handleScanExisting(shop.id); }}
@@ -442,6 +529,26 @@ export default function DashboardPage() {
                     onMouseLeave={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.color = 'var(--text-secondary)'; }}
                   >
                     {isScanning === shop.id ? '...' : 'Scan'}
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm(`Weet je zeker dat je ${shop.domain} wilt verwijderen? Alle scanresultaten worden ook verwijderd.`)) {
+                        shops.delete(shop.id).then(() => loadShops()).catch(err => setError(err.message));
+                      }
+                    }}
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text-muted)',
+                      fontSize: 11, fontWeight: 500,
+                      padding: '4px 8px', borderRadius: 6,
+                      transition: 'all 0.2s',
+                    }}
+                    onMouseEnter={e => { e.target.style.borderColor = 'var(--danger)'; e.target.style.color = 'var(--danger)'; }}
+                    onMouseLeave={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.color = 'var(--text-muted)'; }}
+                  >
+                    ✕
                   </button>
                 </div>
               </div>
