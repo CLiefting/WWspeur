@@ -19,7 +19,7 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MAX_PAGES = 200
+DEFAULT_MAX_PAGES = 50
 REQUEST_TIMEOUT = 15
 DELAY_BETWEEN_REQUESTS = 0.5
 USER_AGENT = (

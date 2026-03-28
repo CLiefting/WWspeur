@@ -2,7 +2,7 @@
 Data collection models - stores results from each collector.
 Each record tracks: what was found, where it was found (source), and when.
 """
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Boolean, Date
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Text, Boolean, Date
 from sqlalchemy.orm import relationship
 from app.models.base import Base, TimestampMixin
 

@@ -17,7 +17,7 @@ class ScanCreate(BaseModel):
         description="Which collectors to run: whois, ssl, scrape, kvk"
     )
     max_pages: int = Field(
-        default=200,
+        default=50,
         ge=10,
         le=2000,
         description="Maximum aantal pagina's om te scrapen (10-2000)"

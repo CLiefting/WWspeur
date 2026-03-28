@@ -67,7 +67,7 @@ def create_scan(
     return scan
 
 
-def _run_scan_background(scan_id: int, shop_id: int, collectors: list[str], max_pages: int = 200):
+def _run_scan_background(scan_id: int, shop_id: int, collectors: list[str], max_pages: int = 50):
     """Background task that runs the requested collectors."""
     import logging
     from datetime import datetime, timezone
