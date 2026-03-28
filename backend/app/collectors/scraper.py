@@ -19,7 +19,7 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MAX_PAGES = 50
+DEFAULT_MAX_PAGES = 200
 REQUEST_TIMEOUT = 15
 DELAY_BETWEEN_REQUESTS = 0.5
 USER_AGENT = (
@@ -475,9 +475,9 @@ def save_crawl_result(result, shop_id, scan_id, db_session):
         emails_found=json.dumps(sorted(result.emails)),
         phones_found=json.dumps(sorted(result.phones)),
         addresses_found=json.dumps(sorted(result.addresses)),
-        kvk_number_found=next(iter(result.kvk_numbers), None),
-        btw_number_found=next(iter(result.btw_numbers), None),
-        iban_found=next(iter(result.iban_numbers), None),
+        kvk_number_found=json.dumps(sorted(result.kvk_numbers)) if result.kvk_numbers else None,
+        btw_number_found=json.dumps(sorted(result.btw_numbers)) if result.btw_numbers else None,
+        iban_found=json.dumps(sorted(result.iban_numbers)) if result.iban_numbers else None,
         social_media_links=json.dumps(result.social_media),
         external_links=json.dumps(sorted(list(result.external_links)[:100])),
         has_terms_page=result.has_terms_page,

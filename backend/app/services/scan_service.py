@@ -223,9 +223,13 @@ def run_kvk_collector(shop: Shop, scan: Scan, db: Session, kvk_numbers: list = N
                 .order_by(ScrapeRecord.id.desc())
                 .first()
             )
-            if latest and latest.kvk_numbers_found:
+            if latest and latest.kvk_number_found:
                 try:
-                    kvk_numbers = json.loads(latest.kvk_numbers_found)
+                    parsed = json.loads(latest.kvk_number_found)
+                    if isinstance(parsed, list):
+                        kvk_numbers = parsed
+                    else:
+                        kvk_numbers = [str(parsed)]
                 except (json.JSONDecodeError, TypeError):
                     kvk_numbers = []
 

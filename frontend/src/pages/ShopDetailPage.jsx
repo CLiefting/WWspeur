@@ -304,19 +304,117 @@ export default function ShopDetailPage() {
               {[
                 { label: 'KvK-nummer', value: latestScrape?.kvk_number_found },
                 { label: 'BTW-nummer', value: latestScrape?.btw_number_found },
-                { label: 'IBAN', value: latestScrape?.iban_found },
-              ].map(({ label, value }) => (
-                <div key={label}>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
-                  <div style={{
-                    fontFamily: 'var(--font-mono)', fontSize: 14,
-                    color: value ? 'var(--gold-light)' : 'var(--text-muted)',
-                  }}>
-                    {value || '—'}
+              ].map(({ label, value }) => {
+                // Parse JSON arrays
+                let display = value;
+                try {
+                  const parsed = JSON.parse(value);
+                  if (Array.isArray(parsed)) display = parsed.join(', ');
+                } catch {}
+                return (
+                  <div key={label}>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
+                    <div style={{
+                      fontFamily: 'var(--font-mono)', fontSize: 14,
+                      color: display ? 'var(--gold-light)' : 'var(--text-muted)',
+                    }}>
+                      {display || '—'}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
+
+            {/* IBAN section with country flags */}
+            {(() => {
+              const COUNTRY_FLAGS = {
+                NL: '🇳🇱', DE: '🇩🇪', BE: '🇧🇪', GB: '🇬🇧', FR: '🇫🇷', ES: '🇪🇸',
+                IT: '🇮🇹', PT: '🇵🇹', AT: '🇦🇹', CH: '🇨🇭', PL: '🇵🇱', CZ: '🇨🇿',
+                DK: '🇩🇰', SE: '🇸🇪', NO: '🇳🇴', FI: '🇫🇮', IE: '🇮🇪', LU: '🇱🇺',
+                RO: '🇷🇴', BG: '🇧🇬', HR: '🇭🇷', HU: '🇭🇺', SK: '🇸🇰', SI: '🇸🇮',
+                LT: '🇱🇹', LV: '🇱🇻', EE: '🇪🇪', MT: '🇲🇹', CY: '🇨🇾', GR: '🇬🇷',
+                TR: '🇹🇷', US: '🇺🇸', RU: '🇷🇺', UA: '🇺🇦', CN: '🇨🇳',
+              };
+              const COUNTRY_NAMES = {
+                NL: 'Nederland', DE: 'Duitsland', BE: 'België', GB: 'Verenigd Koninkrijk',
+                FR: 'Frankrijk', ES: 'Spanje', IT: 'Italië', PT: 'Portugal',
+                AT: 'Oostenrijk', CH: 'Zwitserland', PL: 'Polen', CZ: 'Tsjechië',
+                DK: 'Denemarken', SE: 'Zweden', NO: 'Noorwegen', FI: 'Finland',
+                IE: 'Ierland', LU: 'Luxemburg', RO: 'Roemenië', BG: 'Bulgarije',
+                HR: 'Kroatië', HU: 'Hongarije', SK: 'Slowakije', SI: 'Slovenië',
+                LT: 'Litouwen', LV: 'Letland', EE: 'Estland', MT: 'Malta',
+                CY: 'Cyprus', GR: 'Griekenland', TR: 'Turkije', US: 'VS',
+                RU: 'Rusland', UA: 'Oekraïne', CN: 'China',
+              };
+
+              let ibans = [];
+              try {
+                const raw = latestScrape?.iban_found;
+                if (raw) {
+                  const parsed = JSON.parse(raw);
+                  ibans = Array.isArray(parsed) ? parsed : [parsed];
+                }
+              } catch {
+                if (latestScrape?.iban_found) ibans = [latestScrape.iban_found];
+              }
+
+              if (ibans.length === 0) return (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>IBAN</div>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 14, color: 'var(--text-muted)' }}>—</div>
+                </div>
+              );
+
+              // Group by country
+              const byCountry = {};
+              ibans.forEach(iban => {
+                const cc = iban.substring(0, 2).toUpperCase();
+                if (!byCountry[cc]) byCountry[cc] = [];
+                byCountry[cc].push(iban);
+              });
+
+              // Sort: NL first, then alphabetical
+              const sortedCountries = Object.keys(byCountry).sort((a, b) => {
+                if (a === 'NL') return -1;
+                if (b === 'NL') return 1;
+                return a.localeCompare(b);
+              });
+
+              return (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
+                    IBAN ({ibans.length})
+                  </div>
+                  {sortedCountries.map(cc => (
+                    <div key={cc} style={{ marginBottom: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <span style={{ fontSize: 18 }}>{COUNTRY_FLAGS[cc] || '🏳️'}</span>
+                        <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500 }}>
+                          {COUNTRY_NAMES[cc] || cc}
+                        </span>
+                        {cc !== 'NL' && (
+                          <span style={{
+                            fontSize: 10, padding: '1px 8px', borderRadius: 12,
+                            background: 'rgba(248, 113, 113, 0.15)',
+                            color: 'var(--danger)', fontWeight: 600,
+                          }}>
+                            Buitenlands
+                          </span>
+                        )}
+                      </div>
+                      {byCountry[cc].map((iban, i) => (
+                        <div key={i} style={{
+                          fontFamily: 'var(--font-mono)', fontSize: 14,
+                          color: 'var(--gold-light)', paddingLeft: 30, padding: '2px 0 2px 30px',
+                        }}>
+                          {iban}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
           {/* WHOIS & SSL side by side */}
