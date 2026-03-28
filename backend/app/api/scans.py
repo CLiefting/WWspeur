@@ -12,11 +12,11 @@ from app.models.user import User
 from app.models.shop import Shop
 from app.models.scan import Scan, ScanStatus
 from app.schemas.scan import ScanCreate, ScanResponse
-from app.services.scan_service import run_scrape_collector, run_whois_collector, run_ssl_collector, run_dns_http_collector
+from app.services.scan_service import run_scrape_collector, run_whois_collector, run_ssl_collector, run_dns_http_collector, run_tech_collector
 
 router = APIRouter()
 
-VALID_COLLECTORS = {"whois", "ssl", "scrape", "kvk", "dns_http"}
+VALID_COLLECTORS = {"whois", "ssl", "scrape", "kvk", "dns_http", "tech"}
 
 
 @router.post("/", response_model=ScanResponse, status_code=status.HTTP_201_CREATED)
@@ -106,6 +106,13 @@ def _run_scan_background(scan_id: int, shop_id: int, collectors: list[str], max_
                 run_dns_http_collector(shop=shop, scan=scan, db=db)
             except Exception as e:
                 logger.error(f"DNS/HTTP collector failed: {e}")
+
+        # Run technology detection (fast, ~2 seconds)
+        if "tech" in collectors:
+            try:
+                run_tech_collector(shop=shop, scan=scan, db=db)
+            except Exception as e:
+                logger.error(f"Tech detection failed: {e}")
 
         # Run scraper last (slow, crawls pages)
         if "scrape" in collectors:

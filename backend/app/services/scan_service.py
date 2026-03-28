@@ -12,6 +12,7 @@ from app.collectors.scraper import crawl_website, save_crawl_result
 from app.collectors.whois_lookup import lookup_whois, save_whois_result
 from app.collectors.ssl_check import check_ssl, save_ssl_result
 from app.collectors.dns_http import check_dns_http_redirects, save_dns_http_result
+from app.collectors.tech_detect import detect_technologies, save_tech_result
 from app.services.progress import update_scan_progress
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,28 @@ def run_dns_http_collector(shop: Shop, scan: Scan, db: Session) -> dict:
 
     except Exception as e:
         logger.error(f"DNS/HTTP collector failed for shop {shop.id}: {e}")
+        return {"error": str(e)}
+
+
+def run_tech_collector(shop: Shop, scan: Scan, db: Session) -> dict:
+    """Run the technology detection collector."""
+    logger.info(f"Starting tech detection for shop {shop.id}: {shop.url}")
+
+    try:
+        update_scan_progress(scan, db, {
+            "collector": "tech",
+            "status": "Technologieen detecteren...",
+        })
+
+        result = detect_technologies(shop.url)
+        save_tech_result(result, shop.id, scan.id, db)
+        _mark_collector_done(scan, "tech", db)
+
+        logger.info(f"Tech detection completed for shop {shop.id}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Tech detection failed for shop {shop.id}: {e}")
         return {"error": str(e)}
 
 

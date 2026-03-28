@@ -43,7 +43,7 @@ export default function DashboardPage() {
     setScanProgress(null);
     abortRef.current = false;
 
-    const scan = await scans.create(shopId, ['whois', 'ssl', 'dns_http', 'scrape'], maxPages);
+    const scan = await scans.create(shopId, ['whois', 'ssl', 'dns_http', 'tech', 'scrape'], maxPages);
     setCurrentScanId(scan.id);
 
     await scans.pollUntilDone(
@@ -213,7 +213,7 @@ export default function DashboardPage() {
           </div>
           <input
             type="text"
-            placeholder="voorbeeld-webshop.nl"
+            placeholder="kleertjes-sale.com"
             value={url}
             onChange={e => setUrl(e.target.value)}
             onKeyDown={handleKeyDown}

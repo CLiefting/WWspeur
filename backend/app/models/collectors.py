@@ -210,3 +210,31 @@ class DnsHttpRecord(Base, TimestampMixin):
 
     def __repr__(self):
         return f"<DnsHttpRecord(id={self.id}, shop_id={self.shop_id}, security_score={self.security_score})>"
+
+
+class TechRecord(Base, TimestampMixin):
+    """Technology detection results."""
+    __tablename__ = "tech_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id"), nullable=False)
+    scan_id = Column(Integer, ForeignKey("scans.id"), nullable=True)
+
+    technologies = Column(Text, nullable=True)        # JSON: category -> [names]
+    all_detected = Column(Text, nullable=True)         # JSON: [{category, name}]
+    ecommerce_platform = Column(String(100), nullable=True)
+    cms = Column(String(100), nullable=True)
+    has_analytics = Column(Boolean, nullable=True)
+    has_cookie_consent = Column(Boolean, nullable=True)
+    has_trustmark = Column(Boolean, nullable=True)
+    trustmarks = Column(Text, nullable=True)           # JSON list
+    payment_providers = Column(Text, nullable=True)    # JSON list
+
+    source = Column(String(255), nullable=False, default="tech_detection")
+    raw_data = Column(Text, nullable=True)
+    collected_at = Column(DateTime, nullable=False)
+
+    shop = relationship("Shop", back_populates="tech_records")
+
+    def __repr__(self):
+        return f"<TechRecord(id={self.id}, shop_id={self.shop_id}, platform={self.ecommerce_platform})>"

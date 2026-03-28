@@ -165,6 +165,26 @@ class DnsHttpResponse(BaseModel):
         from_attributes = True
 
 
+class TechResponse(BaseModel):
+    """Technology detection record response."""
+    id: int
+    shop_id: int
+    technologies: Optional[str]
+    all_detected: Optional[str]
+    ecommerce_platform: Optional[str]
+    cms: Optional[str]
+    has_analytics: Optional[bool]
+    has_cookie_consent: Optional[bool]
+    has_trustmark: Optional[bool]
+    trustmarks: Optional[str]
+    payment_providers: Optional[str]
+    source: str
+    collected_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class ShopDetailResponse(BaseModel):
     """Full shop details including all collector results."""
     id: int
@@ -182,6 +202,7 @@ class ShopDetailResponse(BaseModel):
     scrape_records: List[ScrapeResponse] = []
     kvk_records: List[KvKResponse] = []
     dns_http_records: List[DnsHttpResponse] = []
+    tech_records: List[TechResponse] = []
 
     class Config:
         from_attributes = True

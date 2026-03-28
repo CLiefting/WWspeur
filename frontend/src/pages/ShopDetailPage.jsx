@@ -119,6 +119,7 @@ export default function ShopDetailPage() {
   const latestWhois = shop.whois_records?.[shop.whois_records.length - 1];
   const latestSSL = shop.ssl_records?.[shop.ssl_records.length - 1];
   const latestDnsHttp = shop.dns_http_records?.[shop.dns_http_records.length - 1];
+  const latestTech = shop.tech_records?.[shop.tech_records.length - 1];
 
   const parseJSON = (str) => {
     if (!str) return [];
@@ -141,6 +142,10 @@ export default function ShopDetailPage() {
   const secHeadersPresent = latestDnsHttp ? parseJSON(latestDnsHttp.security_headers_present) : [];
   const secHeadersMissing = latestDnsHttp ? parseJSON(latestDnsHttp.security_headers_missing) : [];
   const redirectChain = latestDnsHttp ? parseJSON(latestDnsHttp.redirect_chain) : [];
+  const techAll = latestTech ? parseJSON(latestTech.all_detected) : [];
+  const techTrustmarks = latestTech ? parseJSON(latestTech.trustmarks) : [];
+  const techPayment = latestTech ? parseJSON(latestTech.payment_providers) : [];
+  const techCategories = latestTech ? parseJSONObj(latestTech.technologies) : {};
 
   const riskColors = {
     unknown: 'var(--text-muted)', low: 'var(--success)',
@@ -201,7 +206,7 @@ export default function ShopDetailPage() {
       </div>
 
       {/* No data yet */}
-      {!latestScrape && !latestWhois && !latestSSL && !latestDnsHttp && (
+      {!latestScrape && !latestWhois && !latestSSL && !latestDnsHttp && !latestTech && (
         <div style={{
           textAlign: 'center', padding: '60px 0',
           color: 'var(--text-muted)',
@@ -213,7 +218,7 @@ export default function ShopDetailPage() {
       )}
 
       {/* Results */}
-      {(latestScrape || latestWhois || latestSSL || latestDnsHttp) && (
+      {(latestScrape || latestWhois || latestSSL || latestDnsHttp || latestTech) && (
         <>
           {/* Stats row */}
           <div style={{
@@ -474,11 +479,21 @@ export default function ShopDetailPage() {
                     📡 DNS records
                   </div>
                   <div style={{ display: 'grid', gap: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>A records</span>
-                      <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-                        {dnsARecords.length > 0 ? dnsARecords[0] : '—'}
-                      </span>
+                    {/* A records with org */}
+                    <div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>A records</div>
+                      {dnsARecords.length > 0 ? dnsARecords.map((rec, i) => (
+                        <div key={i} style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', padding: '2px 0' }}>
+                          {rec.ip || rec}
+                          {rec.org && (
+                            <span style={{ color: 'var(--gold)', fontFamily: 'var(--font-body)', marginLeft: 6, fontSize: 11 }}>
+                              ({rec.org})
+                            </span>
+                          )}
+                        </div>
+                      )) : (
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</div>
+                      )}
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>MX (e-mail)</span>
@@ -615,6 +630,115 @@ export default function ShopDetailPage() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Technology detection */}
+          {latestTech && (
+            <div style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
+              borderRadius: 10, padding: '16px 20px', marginBottom: 24,
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 14,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              }}>
+                <span>⚙️ Technologie detectie</span>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)', textTransform: 'none', fontWeight: 400 }}>
+                  {techAll.length} technologieen
+                </span>
+              </div>
+
+              {/* Platform + CMS */}
+              <div style={{ display: 'flex', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
+                {latestTech.ecommerce_platform && (
+                  <div style={{
+                    padding: '8px 16px', borderRadius: 8,
+                    background: 'var(--gold-glow)', border: '1px solid var(--gold-dim)',
+                  }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 2 }}>Platform</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gold)' }}>{latestTech.ecommerce_platform}</div>
+                  </div>
+                )}
+                {latestTech.cms && (
+                  <div style={{
+                    padding: '8px 16px', borderRadius: 8,
+                    background: 'rgba(74, 222, 128, 0.1)', border: '1px solid rgba(74, 222, 128, 0.3)',
+                  }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 2 }}>CMS</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--success)' }}>{latestTech.cms}</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Status badges */}
+              <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+                {[
+                  { label: 'Analytics', active: latestTech.has_analytics },
+                  { label: 'Cookie consent', active: latestTech.has_cookie_consent },
+                  { label: 'Keurmerk', active: latestTech.has_trustmark },
+                ].map(({ label, active }) => (
+                  <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                    <StatusDot active={active} />
+                    <span style={{ color: active ? 'var(--text-primary)' : 'var(--text-muted)' }}>{label}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Keurmerken */}
+              {techTrustmarks.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Keurmerken</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {techTrustmarks.map((tm, i) => (
+                      <span key={i} style={{
+                        fontSize: 12, padding: '4px 12px', borderRadius: 20,
+                        background: 'rgba(74, 222, 128, 0.1)', border: '1px solid rgba(74, 222, 128, 0.3)',
+                        color: 'var(--success)', fontWeight: 500,
+                      }}>{tm}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Payment providers */}
+              {techPayment.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Betaalmethoden</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {techPayment.map((p, i) => (
+                      <span key={i} style={{
+                        fontSize: 12, padding: '4px 12px', borderRadius: 20,
+                        background: 'var(--gold-glow)', border: '1px solid var(--gold-dim)',
+                        color: 'var(--gold-light)', fontWeight: 500,
+                      }}>{p}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* All technologies by category */}
+              {Object.entries(techCategories).filter(([cat]) => !['trustmark', 'payment'].includes(cat)).length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Overige technologieen</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {Object.entries(techCategories)
+                      .filter(([cat]) => !['trustmark', 'payment'].includes(cat))
+                      .flatMap(([cat, names]) => names.map(n => ({ cat, name: n })))
+                      .map((t, i) => (
+                        <span key={i} style={{
+                          fontSize: 11, padding: '3px 10px', borderRadius: 20,
+                          background: 'var(--border)', color: 'var(--text-secondary)',
+                        }}>
+                          {t.name}
+                        </span>
+                      ))
+                    }
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

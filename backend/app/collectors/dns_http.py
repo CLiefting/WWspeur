@@ -45,10 +45,37 @@ def _extract_domain(url: str) -> str:
     return urlparse(url).netloc.lower().lstrip("www.")
 
 
+def _lookup_ip_org(ip: str) -> str:
+    """Look up the organization that owns an IP address via WHOIS."""
+    try:
+        import ipwhois
+        obj = ipwhois.IPWhois(ip)
+        result = obj.lookup_rdap(depth=0)
+        org = result.get("network", {}).get("name", "")
+        if not org:
+            org = result.get("asn_description", "")
+        return org
+    except ImportError:
+        # Fallback: use socket reverse DNS
+        try:
+            hostname = socket.getfqdn(ip)
+            if hostname and hostname != ip:
+                # Extract org-like info from hostname
+                parts = hostname.split(".")
+                if len(parts) >= 2:
+                    return ".".join(parts[-2:])
+            return ""
+        except Exception:
+            return ""
+    except Exception:
+        return ""
+
+
 def _resolve_dns(domain: str) -> dict:
     """Resolve DNS records for a domain using socket + system resolver."""
     dns_data = {
         "a_records": [],
+        "a_records_with_org": [],  # [{ip, org}]
         "aaaa_records": [],
         "mx_records": [],
         "txt_records": [],
@@ -69,7 +96,11 @@ def _resolve_dns(domain: str) -> dict:
         # A records
         try:
             answers = dns.resolver.resolve(domain, "A")
-            dns_data["a_records"] = [str(r) for r in answers]
+            for r in answers:
+                ip = str(r)
+                org = _lookup_ip_org(ip)
+                dns_data["a_records"].append(ip)
+                dns_data["a_records_with_org"].append({"ip": ip, "org": org})
         except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.NoNameservers):
             pass
 
@@ -341,7 +372,7 @@ def save_dns_http_result(result: dict, shop_id: int, scan_id: int, db_session):
         shop_id=shop_id,
         scan_id=scan_id,
         # DNS
-        a_records=json.dumps(result["dns"]["a_records"]),
+        a_records=json.dumps(result["dns"]["a_records_with_org"]),
         mx_records=json.dumps(result["dns"]["mx_records"]),
         txt_records=json.dumps(result["dns"]["txt_records"]),
         ns_records=json.dumps(result["dns"]["ns_records"]),

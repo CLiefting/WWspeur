@@ -1,7 +1,7 @@
 """
 Shop model - represents a webshop being investigated.
 """
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Text, Enum
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Text, Enum as SAEnum
 from sqlalchemy.orm import relationship
 import enum
 from app.models.base import Base, TimestampMixin
@@ -25,7 +25,11 @@ class Shop(Base, TimestampMixin):
     
     # Risk assessment
     risk_score = Column(Float, nullable=True)  # 0.0 (safe) - 100.0 (malicious)
-    risk_level = Column(Enum(RiskLevel), default=RiskLevel.UNKNOWN, nullable=False)
+    risk_level = Column(
+        SAEnum("unknown", "low", "medium", "high", "critical",
+               name="risk_level", create_type=False),
+        default="unknown", server_default="unknown", nullable=False,
+    )
     
     # Notes
     notes = Column(Text, nullable=True)
@@ -41,6 +45,7 @@ class Shop(Base, TimestampMixin):
     scrape_records = relationship("ScrapeRecord", back_populates="shop", cascade="all, delete-orphan")
     kvk_records = relationship("KvKRecord", back_populates="shop", cascade="all, delete-orphan")
     dns_http_records = relationship("DnsHttpRecord", back_populates="shop", cascade="all, delete-orphan")
+    tech_records = relationship("TechRecord", back_populates="shop", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Shop(id={self.id}, domain='{self.domain}', risk_level='{self.risk_level}')>"
