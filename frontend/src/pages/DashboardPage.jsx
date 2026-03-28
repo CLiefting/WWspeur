@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { shops, scans } from '../services/api';
 
 export default function DashboardPage() {
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState('kleertjes-sale.com');
   const [shopList, setShopList] = useState([]);
   const [totalShops, setTotalShops] = useState(0);
   const [search, setSearch] = useState('');
@@ -43,7 +43,7 @@ export default function DashboardPage() {
     setScanProgress(null);
     abortRef.current = false;
 
-    const scan = await scans.create(shopId, ['whois', 'ssl', 'dns_http', 'tech', 'scrape'], maxPages);
+    const scan = await scans.create(shopId, ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'scrape'], maxPages);
     setCurrentScanId(scan.id);
 
     await scans.pollUntilDone(

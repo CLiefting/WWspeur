@@ -12,11 +12,11 @@ from app.models.user import User
 from app.models.shop import Shop
 from app.models.scan import Scan, ScanStatus
 from app.schemas.scan import ScanCreate, ScanResponse
-from app.services.scan_service import run_scrape_collector, run_whois_collector, run_ssl_collector, run_dns_http_collector, run_tech_collector
+from app.services.scan_service import run_scrape_collector, run_whois_collector, run_ssl_collector, run_dns_http_collector, run_tech_collector, run_trustmark_collector
 
 router = APIRouter()
 
-VALID_COLLECTORS = {"whois", "ssl", "scrape", "kvk", "dns_http", "tech"}
+VALID_COLLECTORS = {"whois", "ssl", "scrape", "kvk", "dns_http", "tech", "trustmark"}
 
 
 @router.post("/", response_model=ScanResponse, status_code=status.HTTP_201_CREATED)
@@ -110,9 +110,19 @@ def _run_scan_background(scan_id: int, shop_id: int, collectors: list[str], max_
         # Run technology detection (fast, ~2 seconds)
         if "tech" in collectors:
             try:
-                run_tech_collector(shop=shop, scan=scan, db=db)
+                tech_result = run_tech_collector(shop=shop, scan=scan, db=db)
             except Exception as e:
+                tech_result = {}
                 logger.error(f"Tech detection failed: {e}")
+
+        # Run trustmark verification (moderate, ~10 seconds)
+        if "trustmark" in collectors:
+            try:
+                # Pass claimed trustmarks from tech detection
+                claimed = tech_result.get("trustmarks", []) if isinstance(tech_result, dict) else []
+                run_trustmark_collector(shop=shop, scan=scan, db=db, claimed_trustmarks=claimed)
+            except Exception as e:
+                logger.error(f"Trustmark verification failed: {e}")
 
         # Run scraper last (slow, crawls pages)
         if "scrape" in collectors:

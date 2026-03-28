@@ -185,6 +185,24 @@ class TechResponse(BaseModel):
         from_attributes = True
 
 
+class TrustmarkResponse(BaseModel):
+    """Trustmark verification record response."""
+    id: int
+    shop_id: int
+    verifications: Optional[str]
+    total_checked: Optional[int]
+    total_verified: Optional[int]
+    total_not_found: Optional[int]
+    claimed_not_verified: Optional[int]
+    trustpilot_score: Optional[float]
+    trustpilot_reviews: Optional[int]
+    source: str
+    collected_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class ShopDetailResponse(BaseModel):
     """Full shop details including all collector results."""
     id: int
@@ -203,6 +221,7 @@ class ShopDetailResponse(BaseModel):
     kvk_records: List[KvKResponse] = []
     dns_http_records: List[DnsHttpResponse] = []
     tech_records: List[TechResponse] = []
+    trustmark_records: List[TrustmarkResponse] = []
 
     class Config:
         from_attributes = True

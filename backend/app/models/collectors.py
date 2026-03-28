@@ -238,3 +238,31 @@ class TechRecord(Base, TimestampMixin):
 
     def __repr__(self):
         return f"<TechRecord(id={self.id}, shop_id={self.shop_id}, platform={self.ecommerce_platform})>"
+
+
+class TrustmarkRecord(Base, TimestampMixin):
+    """Trustmark/keurmerk verification results."""
+    __tablename__ = "trustmark_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id"), nullable=False)
+    scan_id = Column(Integer, ForeignKey("scans.id"), nullable=True)
+
+    verifications = Column(Text, nullable=True)       # JSON: full verification results
+    total_checked = Column(Integer, nullable=True)
+    total_verified = Column(Integer, nullable=True)
+    total_not_found = Column(Integer, nullable=True)
+    claimed_not_verified = Column(Integer, nullable=True)
+
+    # Trustpilot specific
+    trustpilot_score = Column(Float, nullable=True)
+    trustpilot_reviews = Column(Integer, nullable=True)
+
+    source = Column(String(255), nullable=False, default="trustmark_verification")
+    raw_data = Column(Text, nullable=True)
+    collected_at = Column(DateTime, nullable=False)
+
+    shop = relationship("Shop", back_populates="trustmark_records")
+
+    def __repr__(self):
+        return f"<TrustmarkRecord(id={self.id}, shop_id={self.shop_id}, verified={self.total_verified})>"

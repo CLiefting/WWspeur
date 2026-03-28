@@ -130,11 +130,11 @@ export default function ShopDetailPage() {
     try { return JSON.parse(str); } catch { return {}; }
   };
 
-  const emails = latestScrape ? parseJSON(latestScrape.emails_found) : [];
-  const phones = latestScrape ? parseJSON(latestScrape.phones_found) : [];
-  const addresses = latestScrape ? parseJSON(latestScrape.addresses_found) : [];
-  const socialMedia = latestScrape ? parseJSONObj(latestScrape.social_media_links) : {};
-  const externalLinks = latestScrape ? parseJSON(latestScrape.external_links) : [];
+  const emails = latestScrape ? parseJSON(latestScrape?.emails_found) : [];
+  const phones = latestScrape ? parseJSON(latestScrape?.phones_found) : [];
+  const addresses = latestScrape ? parseJSON(latestScrape?.addresses_found) : [];
+  const socialMedia = latestScrape ? parseJSONObj(latestScrape?.social_media_links) : {};
+  const externalLinks = latestScrape ? parseJSON(latestScrape?.external_links) : [];
   const nameServers = latestWhois ? parseJSON(latestWhois.name_servers) : [];
   const sanDomains = latestSSL ? parseJSON(latestSSL.san_domains) : [];
   const dnsARecords = latestDnsHttp ? parseJSON(latestDnsHttp.a_records) : [];
@@ -146,6 +146,8 @@ export default function ShopDetailPage() {
   const techTrustmarks = latestTech ? parseJSON(latestTech.trustmarks) : [];
   const techPayment = latestTech ? parseJSON(latestTech.payment_providers) : [];
   const techCategories = latestTech ? parseJSONObj(latestTech.technologies) : {};
+  const latestTrustmark = shop.trustmark_records?.[shop.trustmark_records.length - 1];
+  const trustmarkVerifications = latestTrustmark ? parseJSON(latestTrustmark.verifications) : [];
 
   const riskColors = {
     unknown: 'var(--text-muted)', low: 'var(--success)',
@@ -269,10 +271,10 @@ export default function ShopDetailPage() {
               Pagina checks
             </div>
             {[
-              { label: 'Contactpagina', ok: latestScrape.has_contact_page },
-              { label: 'Privacybeleid', ok: latestScrape.has_privacy_page },
-              { label: 'Algemene voorwaarden', ok: latestScrape.has_terms_page },
-              { label: 'Retourbeleid', ok: latestScrape.has_return_policy },
+              { label: 'Contactpagina', ok: latestScrape?.has_contact_page },
+              { label: 'Privacybeleid', ok: latestScrape?.has_privacy_page },
+              { label: 'Algemene voorwaarden', ok: latestScrape?.has_terms_page },
+              { label: 'Retourbeleid', ok: latestScrape?.has_return_policy },
             ].map(({ label, ok }) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', fontSize: 13 }}>
                 <StatusDot active={ok} />
@@ -651,7 +653,7 @@ export default function ShopDetailPage() {
                 </span>
               </div>
 
-              {/* Platform + CMS */}
+              {/* Platform + CMS highlight */}
               <div style={{ display: 'flex', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
                 {latestTech.ecommerce_platform && (
                   <div style={{
@@ -673,72 +675,159 @@ export default function ShopDetailPage() {
                 )}
               </div>
 
-              {/* Status badges */}
-              <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+              {/* All categories with details */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 {[
-                  { label: 'Analytics', active: latestTech.has_analytics },
-                  { label: 'Cookie consent', active: latestTech.has_cookie_consent },
-                  { label: 'Keurmerk', active: latestTech.has_trustmark },
-                ].map(({ label, active }) => (
-                  <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                    <StatusDot active={active} />
-                    <span style={{ color: active ? 'var(--text-primary)' : 'var(--text-muted)' }}>{label}</span>
-                  </div>
-                ))}
+                  { key: 'analytics', icon: '📊', label: 'Analytics', color: 'var(--gold)' },
+                  { key: 'privacy', icon: '🍪', label: 'Cookie consent', color: 'var(--success)' },
+                  { key: 'payment', icon: '💳', label: 'Betaalmethoden', color: 'var(--gold)' },
+                  { key: 'trustmark', icon: '✅', label: 'Keurmerken', color: 'var(--success)' },
+                  { key: 'framework', icon: '🔧', label: 'Frameworks', color: 'var(--text-secondary)' },
+                  { key: 'hosting', icon: '☁️', label: 'Hosting / CDN', color: 'var(--text-secondary)' },
+                  { key: 'security', icon: '🛡️', label: 'Beveiliging', color: 'var(--text-secondary)' },
+                ].map(({ key, icon, label, color }) => {
+                  const items = techCategories[key] || [];
+                  return (
+                    <div key={key} style={{
+                      padding: '10px 14px', borderRadius: 8,
+                      background: items.length > 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
+                      border: items.length > 0 ? '1px solid var(--border)' : '1px solid transparent',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: items.length > 0 ? 8 : 0 }}>
+                        <StatusDot active={items.length > 0} />
+                        <span style={{
+                          fontSize: 12, fontWeight: 500,
+                          color: items.length > 0 ? 'var(--text-primary)' : 'var(--text-muted)',
+                        }}>
+                          {icon} {label}
+                        </span>
+                      </div>
+                      {items.length > 0 && (
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 20 }}>
+                          {items.map((name, i) => (
+                            <span key={i} style={{
+                              fontSize: 11, padding: '2px 10px', borderRadius: 16,
+                              background: key === 'trustmark' ? 'rgba(74, 222, 128, 0.1)'
+                                : key === 'payment' ? 'var(--gold-glow)'
+                                : 'var(--border)',
+                              border: key === 'trustmark' ? '1px solid rgba(74, 222, 128, 0.3)'
+                                : key === 'payment' ? '1px solid var(--gold-dim)'
+                                : '1px solid transparent',
+                              color: key === 'trustmark' ? 'var(--success)'
+                                : key === 'payment' ? 'var(--gold-light)'
+                                : 'var(--text-secondary)',
+                              fontWeight: 500,
+                            }}>
+                              {name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Trustmark verification */}
+          {latestTrustmark && trustmarkVerifications.length > 0 && (
+            <div style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
+              borderRadius: 10, padding: '16px 20px', marginBottom: 24,
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 14,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              }}>
+                <span>🏅 Keurmerk verificatie</span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <span style={{
+                    fontSize: 11, padding: '2px 10px', borderRadius: 20,
+                    background: 'rgba(74, 222, 128, 0.15)', color: 'var(--success)',
+                    fontWeight: 600, textTransform: 'none',
+                  }}>
+                    {latestTrustmark.total_verified} geverifieerd
+                  </span>
+                  {latestTrustmark.claimed_not_verified > 0 && (
+                    <span style={{
+                      fontSize: 11, padding: '2px 10px', borderRadius: 20,
+                      background: 'rgba(248, 113, 113, 0.15)', color: 'var(--danger)',
+                      fontWeight: 600, textTransform: 'none',
+                    }}>
+                      {latestTrustmark.claimed_not_verified} vals geclaimed!
+                    </span>
+                  )}
+                </div>
               </div>
 
-              {/* Keurmerken */}
-              {techTrustmarks.length > 0 && (
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Keurmerken</div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {techTrustmarks.map((tm, i) => (
-                      <span key={i} style={{
-                        fontSize: 12, padding: '4px 12px', borderRadius: 20,
-                        background: 'rgba(74, 222, 128, 0.1)', border: '1px solid rgba(74, 222, 128, 0.3)',
-                        color: 'var(--success)', fontWeight: 500,
-                      }}>{tm}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <div style={{ display: 'grid', gap: 8 }}>
+                {trustmarkVerifications.map((v, i) => {
+                  const statusConfig = {
+                    verified: { icon: '✅', color: 'var(--success)', bg: 'rgba(74, 222, 128, 0.08)' },
+                    found: { icon: '✅', color: 'var(--success)', bg: 'rgba(74, 222, 128, 0.08)' },
+                    likely_verified: { icon: '🟡', color: 'var(--gold)', bg: 'var(--gold-glow)' },
+                    not_found: { icon: '❌', color: 'var(--text-muted)', bg: 'transparent' },
+                    check_failed: { icon: '⚠️', color: 'var(--text-muted)', bg: 'transparent' },
+                  };
+                  const cfg = statusConfig[v.status] || statusConfig.not_found;
 
-              {/* Payment providers */}
-              {techPayment.length > 0 && (
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Betaalmethoden</div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {techPayment.map((p, i) => (
-                      <span key={i} style={{
-                        fontSize: 12, padding: '4px 12px', borderRadius: 20,
-                        background: 'var(--gold-glow)', border: '1px solid var(--gold-dim)',
-                        color: 'var(--gold-light)', fontWeight: 500,
-                      }}>{p}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* All technologies by category */}
-              {Object.entries(techCategories).filter(([cat]) => !['trustmark', 'payment'].includes(cat)).length > 0 && (
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Overige technologieen</div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {Object.entries(techCategories)
-                      .filter(([cat]) => !['trustmark', 'payment'].includes(cat))
-                      .flatMap(([cat, names]) => names.map(n => ({ cat, name: n })))
-                      .map((t, i) => (
-                        <span key={i} style={{
-                          fontSize: 11, padding: '3px 10px', borderRadius: 20,
-                          background: 'var(--border)', color: 'var(--text-secondary)',
-                        }}>
-                          {t.name}
-                        </span>
-                      ))
-                    }
-                  </div>
-                </div>
-              )}
+                  return (
+                    <div key={i} style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '10px 14px', borderRadius: 8,
+                      background: cfg.bg,
+                      border: v.claimed && !v.verified ? '1px solid rgba(248, 113, 113, 0.3)' : '1px solid var(--border)',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontSize: 16 }}>{cfg.icon}</span>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: cfg.color }}>
+                            {v.name}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                            {v.details || (v.error ? 'Controle mislukt' : '')}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        {v.score && (
+                          <div style={{
+                            fontSize: 16, fontWeight: 600,
+                            color: parseFloat(v.score) >= 4.0 ? 'var(--success)' :
+                                   parseFloat(v.score) >= 3.0 ? 'var(--gold)' : 'var(--danger)',
+                          }}>
+                            {v.score}/5
+                          </div>
+                        )}
+                        {v.reviews && (
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            {v.reviews.toLocaleString('nl-NL')} reviews
+                          </div>
+                        )}
+                        {v.claimed && !v.verified && (
+                          <div style={{
+                            fontSize: 10, fontWeight: 600, color: 'var(--danger)',
+                            textTransform: 'uppercase', marginTop: 2,
+                          }}>
+                            Vals geclaimed!
+                          </div>
+                        )}
+                        {v.claimed && v.verified && (
+                          <div style={{
+                            fontSize: 10, fontWeight: 600, color: 'var(--success)',
+                            marginTop: 2,
+                          }}>
+                            Bevestigd
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -861,8 +950,8 @@ export default function ShopDetailPage() {
             fontSize: 11, color: 'var(--text-muted)',
             display: 'flex', justifyContent: 'space-between',
           }}>
-            <span>Laatst gescraped: {new Date(latestScrape.collected_at).toLocaleString('nl-NL')}</span>
-            <span>Bron: {latestScrape.source}</span>
+            <span>Laatst gescraped: {new Date(latestScrape?.collected_at).toLocaleString('nl-NL')}</span>
+            <span>Bron: {latestScrape?.source}</span>
           </div>
         </>
       )}

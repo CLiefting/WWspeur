@@ -33,7 +33,7 @@ def _extract_domain(url: str) -> str:
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
     parsed = urlparse(url)
-    domain = parsed.netloc.lower().lstrip("www.")
+    domain = parsed.netloc.lower().removeprefix("www.")
     return domain
 
 
@@ -90,8 +90,8 @@ def _detect_privacy(whois_data) -> bool:
     ]
     empty_count = sum(1 for f in registrant_fields if not f)
     if empty_count >= 2:
-        return True
-    
+        return None  # Onvoldoende data om vast te stellen
+
     return False
 
 
@@ -142,25 +142,26 @@ def lookup_whois(url: str) -> dict:
         
         # Domain age
         if result["registration_date"]:
-            age = date.today() - result["registration_date"]
-            result["domain_age_days"] = age.days
+            today = datetime.now(timezone.utc).date()
+            result["domain_age_days"] = (today - result["registration_date"]).days
         
         # Name servers
         ns = getattr(w, 'name_servers', None)
         if ns:
             if isinstance(ns, list):
-                result["name_servers"] = [str(n).lower() for n in ns if n]
+                result["name_servers"] = list(dict.fromkeys(str(n).lower() for n in ns if n))
             else:
                 result["name_servers"] = [str(ns).lower()]
         
         # Privacy detection
         result["is_privacy_protected"] = _detect_privacy(w)
         
-        # Raw data for debugging
+        # Raw data for debugging (afgekapt op 10.000 tekens)
         try:
-            result["raw_data"] = w.text if hasattr(w, 'text') else str(w)
+            raw = w.text if hasattr(w, 'text') else str(w)
+            result["raw_data"] = raw[:10_000] if raw else None
         except Exception:
-            result["raw_data"] = str(w)
+            result["raw_data"] = None
         
         logger.info(
             f"WHOIS voltooid voor {domain}: "
@@ -210,7 +211,7 @@ def save_whois_result(
     )
     
     db_session.add(record)
-    db_session.commit()
+    db_session.flush()
     return record
 
 

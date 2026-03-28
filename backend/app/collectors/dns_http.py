@@ -434,7 +434,8 @@ if __name__ == "__main__":
     if d['aaaa_records']:
         print(f"AAAA records: {', '.join(d['aaaa_records'])}")
     if d['mx_records']:
-        print(f"MX records:   {', '.join(f'{m['host']} (pri {m['priority']})' for m in d['mx_records'])}")
+        mx_str = ', '.join("{} (pri {})".format(m.get('host',''), m.get('priority','')) for m in d['mx_records'])
+        print("MX records:   " + mx_str)
     else:
         print(f"MX records:   GEEN — site kan geen e-mail ontvangen!")
     print(f"NS records:   {', '.join(d['ns_records']) or '—'}")
