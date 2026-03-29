@@ -248,8 +248,59 @@ def list_shops(
         .all()
     )
 
+    # Add last_scanned and scan_stats from related records
+    from app.models.scan import Scan
+    from app.models.collectors import ScrapeRecord
+    import json as json_mod
+
+    shop_responses = []
+    for shop in shops:
+        latest_scan = (
+            db.query(Scan.completed_at)
+            .filter(Scan.shop_id == shop.id, Scan.status == "completed")
+            .order_by(Scan.completed_at.desc())
+            .first()
+        )
+        resp = ShopResponse.from_orm(shop)
+        if latest_scan and latest_scan.completed_at:
+            resp.last_scanned = latest_scan.completed_at
+
+        # Get stats from latest scrape record
+        latest_scrape = (
+            db.query(ScrapeRecord)
+            .filter(ScrapeRecord.shop_id == shop.id)
+            .order_by(ScrapeRecord.id.desc())
+            .first()
+        )
+        if latest_scrape:
+            def count_json(val):
+                if not val:
+                    return 0
+                try:
+                    parsed = json_mod.loads(val)
+                    if isinstance(parsed, list):
+                        return len([x for x in parsed if x])
+                    return 1 if parsed else 0
+                except Exception:
+                    return 1 if val else 0
+
+            resp.scan_stats = {
+                "emails": count_json(latest_scrape.emails_found),
+                "phones": count_json(latest_scrape.phones_found),
+                "addresses": count_json(latest_scrape.addresses_found),
+                "kvk": count_json(latest_scrape.kvk_number_found),
+                "btw": count_json(latest_scrape.btw_number_found),
+                "iban": count_json(latest_scrape.iban_found),
+                "contact": latest_scrape.has_contact_page or False,
+                "privacy": latest_scrape.has_privacy_page or False,
+                "terms": latest_scrape.has_terms_page or False,
+                "returns": latest_scrape.has_return_policy or False,
+            }
+
+        shop_responses.append(resp)
+
     return ShopListResponse(
-        shops=shops,
+        shops=shop_responses,
         total=total,
         page=page,
         page_size=page_size,

@@ -244,6 +244,26 @@ async function generateReport(shop) {
     if (rows.length > 0) {
       children.push(new Table({ width: { size: TABLE_WIDTH, type: WidthType.DXA }, columnWidths: COL2, rows }));
     }
+
+    // Shopify IDs
+    const techRaw = parseJSONObj(latestTech.raw_data);
+    const shopifyIds = techRaw.shopify_ids;
+    if (shopifyIds && Object.keys(shopifyIds).length > 0) {
+      children.push(para(""));
+      children.push(para("Shopify Identiteit:", { bold: true }));
+      if (shopifyIds.myshopify_domain) {
+        children.push(para(`  Myshopify domein: ${shopifyIds.myshopify_domain[0]}`, { size: 20 }));
+      }
+      if (shopifyIds.shopify_shop) {
+        children.push(para(`  Shopify shop: ${shopifyIds.shopify_shop[0]}`, { size: 20 }));
+      }
+      if (shopifyIds.shop_id) {
+        children.push(para(`  Shop ID: ${shopifyIds.shop_id[0]}`, { size: 20 }));
+      }
+      if (shopifyIds.storefront_token) {
+        children.push(para(`  Storefront token: ${shopifyIds.storefront_token[0]}`, { size: 20 }));
+      }
+    }
   }
 
   // ── Keurmerk verificatie ──

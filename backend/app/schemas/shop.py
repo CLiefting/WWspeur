@@ -31,6 +31,8 @@ class ShopResponse(BaseModel):
     added_by: int
     created_at: datetime
     updated_at: datetime
+    last_scanned: Optional[datetime] = None
+    scan_stats: Optional[dict] = None
 
     class Config:
         from_attributes = True

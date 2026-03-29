@@ -159,32 +159,47 @@ export default function DashboardPage() {
         pg++;
       }
 
-      setBatchProgress({ current: 0, total: allShops.length, currentDomain: '' });
+      setBatchProgress({ current: 0, total: allShops.length, currentDomain: '', shopProgress: null, completedShops: [] });
       const scannedShopIds = [];
 
       for (let i = 0; i < allShops.length; i++) {
         if (abortRef.current) break;
 
         const shop = allShops[i];
-        setBatchProgress({ current: i + 1, total: allShops.length, currentDomain: shop.domain });
+        setBatchProgress(p => ({
+          ...p, current: i + 1, currentDomain: shop.domain, shopProgress: null,
+        }));
 
         try {
           const scan = await scans.create(shop.id, ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape', 'kvk'], maxPages);
 
-          // Poll until done
+          // Poll until done WITH progress updates
           await scans.pollUntilDone(
             scan.id,
             () => {},
-            () => {},
-            2000,
+            (progressData) => {
+              if (progressData.progress && Object.keys(progressData.progress).length > 0) {
+                setBatchProgress(p => ({ ...p, shopProgress: progressData.progress }));
+              }
+            },
+            1500,
             () => abortRef.current,
           );
 
           if (!abortRef.current) {
             scannedShopIds.push(shop.id);
+            setBatchProgress(p => ({
+              ...p,
+              completedShops: [...(p.completedShops || []), { domain: shop.domain, status: 'ok' }],
+              shopProgress: null,
+            }));
           }
         } catch (err) {
           console.error('Scan failed for', shop.domain, err);
+          setBatchProgress(p => ({
+            ...p,
+            completedShops: [...(p.completedShops || []), { domain: shop.domain, status: 'error' }],
+          }));
         }
       }
 
@@ -436,15 +451,24 @@ export default function DashboardPage() {
           background: 'var(--bg-card)', border: '1px solid var(--gold-dim)',
           borderRadius: 10, padding: '16px 20px', marginBottom: 24,
         }}>
+          {/* Overall progress header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <div style={{ fontSize: 13, color: 'var(--gold-light)' }}>
+            <div style={{ fontSize: 13, color: 'var(--gold-light)', fontWeight: 500 }}>
               Batch scan: {batchProgress.current} / {batchProgress.total}
             </div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--gold)' }}>
-              {batchProgress.currentDomain}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{
+                width: 8, height: 8, borderRadius: '50%', background: 'var(--gold)',
+                animation: 'pulse 1.5s ease-in-out infinite',
+              }} />
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 14, color: 'var(--gold)' }}>
+                {batchProgress.currentDomain}
+              </span>
             </div>
           </div>
-          <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+
+          {/* Overall progress bar */}
+          <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', marginBottom: 14 }}>
             <div style={{
               height: '100%',
               width: `${batchProgress.total > 0 ? (batchProgress.current / batchProgress.total) * 100 : 0}%`,
@@ -452,6 +476,59 @@ export default function DashboardPage() {
               borderRadius: 2, transition: 'width 0.5s ease',
             }} />
           </div>
+
+          {/* Current shop scan progress */}
+          {batchProgress.shopProgress && (
+            <div style={{
+              background: 'rgba(255,255,255,0.03)', borderRadius: 8,
+              padding: '10px 14px', marginBottom: 12, border: '1px solid var(--border)',
+            }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
+                Huidige scan: {batchProgress.currentDomain}
+              </div>
+
+              {/* Per-shop progress bar */}
+              <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', marginBottom: 8 }}>
+                <div style={{
+                  height: '100%',
+                  width: `${Math.min(100, ((batchProgress.shopProgress.pages_crawled || 0) / (batchProgress.shopProgress.max_pages || 50)) * 100)}%`,
+                  background: 'var(--gold-dim)', borderRadius: 2, transition: 'width 0.5s ease',
+                }} />
+              </div>
+
+              {/* Stats */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                {[
+                  { label: "Pagina's", value: batchProgress.shopProgress.pages_crawled || 0 },
+                  { label: 'E-mails', value: batchProgress.shopProgress.emails_found || 0 },
+                  { label: 'Telefoon', value: batchProgress.shopProgress.phones_found || 0 },
+                  { label: 'KvK', value: batchProgress.shopProgress.kvk_found || 0 },
+                ].map(({ label, value }) => (
+                  <div key={label} style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--gold)', lineHeight: 1 }}>{value}</div>
+                    <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: 2 }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Completed shops list */}
+          {batchProgress.completedShops?.length > 0 && (
+            <div style={{ maxHeight: 120, overflowY: 'auto' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Afgerond:</div>
+              {batchProgress.completedShops.map((s, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '1px 0' }}>
+                  <span style={{ color: s.status === 'ok' ? 'var(--success)' : 'var(--danger)' }}>
+                    {s.status === 'ok' ? '✓' : '✗'}
+                  </span>
+                  <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{s.domain}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
         </div>
       )}
 
@@ -659,16 +736,47 @@ export default function DashboardPage() {
                 onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--gold-dim)'}
                 onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
               >
-                <div>
+                <div style={{ flex: 1 }}>
                   <div style={{
                     fontFamily: 'var(--font-mono)', fontSize: 14,
-                    color: 'var(--gold-light)', marginBottom: 4,
+                    color: 'var(--gold-light)', marginBottom: 2,
+                    display: 'flex', alignItems: 'center', gap: 6,
                   }}>
+                    {shop.last_scanned && (
+                      <span title={`Gescand: ${new Date(shop.last_scanned).toLocaleString('nl-NL')}`}
+                        style={{ color: 'var(--success)', fontSize: 13 }}>✓</span>
+                    )}
                     {shop.domain}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: shop.scan_stats ? 4 : 0 }}>
                     {shop.name || shop.url}
                   </div>
+                  {shop.scan_stats && (
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+                      {[
+                        { label: 'email', value: shop.scan_stats.emails, icon: '✉' },
+                        { label: 'tel', value: shop.scan_stats.phones, icon: '📞' },
+                        { label: 'adres', value: shop.scan_stats.addresses, icon: '📍' },
+                        { label: 'kvk', value: shop.scan_stats.kvk, icon: '🏢' },
+                        { label: 'iban', value: shop.scan_stats.iban, icon: '💳' },
+                      ].filter(s => s.value > 0).map(({ label, value, icon }) => (
+                        <span key={label} style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 2 }}>
+                          <span style={{ fontSize: 10 }}>{icon}</span>
+                          <span style={{ color: 'var(--gold-light)', fontWeight: 500 }}>{value}</span>
+                        </span>
+                      ))}
+                      {[
+                        { label: 'contact', ok: shop.scan_stats.contact },
+                        { label: 'privacy', ok: shop.scan_stats.privacy },
+                        { label: 'voorw.', ok: shop.scan_stats.terms },
+                        { label: 'retour', ok: shop.scan_stats.returns },
+                      ].map(({ label, ok }) => (
+                        <span key={label} style={{ fontSize: 10, color: ok ? 'var(--success)' : 'var(--danger)' }}>
+                          {ok ? '●' : '○'} {label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {riskBadge(shop.risk_level)}

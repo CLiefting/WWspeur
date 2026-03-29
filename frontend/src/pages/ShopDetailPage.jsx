@@ -67,23 +67,40 @@ export default function ShopDetailPage() {
 
   useEffect(() => { loadShop(); }, [id]);
 
+  const [scanProgress, setScanProgress] = useState(null);
+
   const handleScan = async () => {
     setIsScanning(true);
     setScanStatus('Scan gestart...');
+    setScanProgress(null);
 
     try {
-      const scan = await scans.create(parseInt(id), ['scrape']);
-      await scans.pollUntilDone(scan.id, (s) => {
-        if (s.status === 'running') setScanStatus('Pagina\'s worden gescraped...');
-        else if (s.status === 'completed') setScanStatus('Voltooid!');
-        else if (s.status === 'failed') setScanStatus('Mislukt');
-      });
+      const scan = await scans.create(parseInt(id), ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape', 'kvk'], 50);
+      await scans.pollUntilDone(
+        scan.id,
+        (s) => {
+          if (s.status === 'completed') setScanStatus('Voltooid!');
+          else if (s.status === 'failed') setScanStatus('Mislukt');
+        },
+        (progressData) => {
+          if (progressData.progress && Object.keys(progressData.progress).length > 0) {
+            setScanProgress(progressData.progress);
+            const p = progressData.progress;
+            setScanStatus(
+              `Pagina ${p.pages_crawled || 0}/${p.max_pages || '?'} — ` +
+              `${p.emails_found || 0} emails, ${p.phones_found || 0} tel, ` +
+              `${p.kvk_found || 0} KvK`
+            );
+          }
+        },
+      );
       await loadShop();
     } catch (err) {
       setError(err.message);
     } finally {
       setIsScanning(false);
       setScanStatus('');
+      setScanProgress(null);
     }
   };
 
@@ -247,6 +264,48 @@ export default function ShopDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Scan progress indicator */}
+      {isScanning && (
+        <div style={{
+          background: 'var(--bg-card)', border: '1px solid var(--gold-dim)',
+          borderRadius: 10, padding: '16px 20px', marginBottom: 24,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: scanProgress ? 12 : 0 }}>
+            <div style={{
+              width: 8, height: 8, borderRadius: '50%', background: 'var(--gold)',
+              animation: 'pulse 1.5s ease-in-out infinite',
+            }} />
+            <span style={{ fontSize: 13, color: 'var(--gold-light)' }}>{scanStatus}</span>
+          </div>
+          {scanProgress && (
+            <>
+              <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', marginBottom: 10 }}>
+                <div style={{
+                  height: '100%',
+                  width: `${Math.min(100, ((scanProgress.pages_crawled || 0) / (scanProgress.max_pages || 50)) * 100)}%`,
+                  background: 'linear-gradient(90deg, var(--gold-dim), var(--gold))',
+                  borderRadius: 2, transition: 'width 0.5s ease',
+                }} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                {[
+                  { label: "Pagina's", value: scanProgress.pages_crawled || 0 },
+                  { label: 'E-mails', value: scanProgress.emails_found || 0 },
+                  { label: 'Telefoon', value: scanProgress.phones_found || 0 },
+                  { label: 'KvK', value: scanProgress.kvk_found || 0 },
+                ].map(({ label, value }) => (
+                  <div key={label} style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--gold)', lineHeight: 1 }}>{value}</div>
+                    <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: 2 }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
+        </div>
+      )}
 
       {/* No data yet */}
       {!latestScrape && !latestWhois && !latestSSL && !latestDnsHttp && !latestTech && (
@@ -866,6 +925,43 @@ export default function ShopDetailPage() {
                   );
                 })}
               </div>
+
+              {/* Shopify IDs */}
+              {(() => {
+                const rawData = latestTech?.raw_data ? parseJSONObj(latestTech.raw_data) : {};
+                const shopifyIds = rawData.shopify_ids;
+                if (!shopifyIds || Object.keys(shopifyIds).length === 0) return null;
+                return (
+                  <div style={{
+                    marginTop: 12, padding: '10px 14px', borderRadius: 8,
+                    background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)',
+                  }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 8 }}>
+                      🛒 Shopify Identiteit
+                    </div>
+                    {shopifyIds.myshopify_domain && (
+                      <div style={{ fontSize: 13, color: 'var(--gold)', fontFamily: 'var(--font-mono)', marginBottom: 4 }}>
+                        {shopifyIds.myshopify_domain[0]}
+                      </div>
+                    )}
+                    {shopifyIds.shopify_shop && !shopifyIds.myshopify_domain && (
+                      <div style={{ fontSize: 13, color: 'var(--gold)', fontFamily: 'var(--font-mono)', marginBottom: 4 }}>
+                        {shopifyIds.shopify_shop[0]}
+                      </div>
+                    )}
+                    {shopifyIds.shop_id && (
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        Shop ID: <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{shopifyIds.shop_id[0]}</span>
+                      </div>
+                    )}
+                    {shopifyIds.storefront_token && (
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        Storefront token: <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>{shopifyIds.storefront_token[0]}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 

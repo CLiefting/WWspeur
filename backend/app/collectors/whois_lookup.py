@@ -200,8 +200,13 @@ def save_whois_result(
     scan_id: Optional[int],
     db_session,
 ):
-    """Save WHOIS result to the database."""
+    """Save WHOIS result to the database. Skips if no useful data."""
     from app.models.collectors import WhoisRecord
+    
+    # Skip saving if no useful data found (prevents empty records)
+    if not result.get("registrar") and not result.get("registration_date") and not result.get("raw_data"):
+        logger.warning("WHOIS result is empty for shop %s, skipping save", shop_id)
+        return None
     
     now = datetime.now(timezone.utc)
     

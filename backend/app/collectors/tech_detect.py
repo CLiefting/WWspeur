@@ -239,7 +239,8 @@ def detect_technologies(url: str) -> dict:
             headers={"User-Agent": USER_AGENT},
         )
 
-        html = response.text.lower()
+        original_html = response.text
+        html = original_html.lower()
         headers_str = " ".join(
             "{}: {}".format(k.lower(), v.lower()) for k, v in response.headers.items()
         )
@@ -279,6 +280,42 @@ def detect_technologies(url: str) -> dict:
         result["has_trustmark"] = "trustmark" in result["technologies"]
         result["trustmarks"] = result["technologies"].get("trustmark", [])
         result["payment_providers"] = result["technologies"].get("payment", [])
+
+        # Extract Shopify shop identifiers if Shopify detected
+        if result["ecommerce_platform"] == "Shopify" or "shopify" in html:
+            shopify_ids = {}
+
+            # Shop ID (numeric)
+            shop_id_matches = re.findall(r'"shopId"\s*:\s*(\d+)', original_html)
+            if shop_id_matches:
+                shopify_ids["shop_id"] = list(set(shop_id_matches))
+
+            # Myshopify domain (reveals real shop identity)
+            myshopify = re.findall(r'"myshopify_domain"\s*:\s*"([^"]+)"', original_html)
+            if myshopify:
+                shopify_ids["myshopify_domain"] = list(set(myshopify))
+
+            # Shopify.shop variable
+            shopify_shop = re.findall(r'Shopify\.shop\s*=\s*"([^"]+)"', original_html)
+            if shopify_shop:
+                shopify_ids["shopify_shop"] = list(set(shopify_shop))
+
+            # Permanent domain
+            perm = re.findall(r'"permanent_domain"\s*:\s*"([^"]+)"', original_html)
+            if perm:
+                shopify_ids["permanent_domain"] = list(set(perm))
+
+            # Storefront access token
+            sf_token = re.findall(r'"storefrontAccessToken"\s*:\s*"([^"]+)"', original_html)
+            if sf_token:
+                shopify_ids["storefront_token"] = list(set(sf_token))
+
+            if shopify_ids:
+                result["shopify_ids"] = shopify_ids
+                logger.info(
+                    "Shopify IDs gevonden voor %s: %s",
+                    domain, ", ".join("{}={}".format(k, v[0]) for k, v in shopify_ids.items()),
+                )
 
         logger.info(
             "Tech detectie voltooid voor %s: %d technologieen, platform=%s",
