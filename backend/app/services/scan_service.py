@@ -46,6 +46,7 @@ def run_whois_collector(shop: Shop, scan: Scan, db: Session) -> dict:
         })
 
         result = lookup_whois(shop.url)
+        logger.info(f"WHOIS result for {shop.domain}: registrar={result.get('registrar')}, date={result.get('registration_date')}, error={result.get('error')}")
         save_whois_result(result, shop.id, scan.id, db)
         _mark_collector_done(scan, "whois", db)
 

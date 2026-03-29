@@ -177,11 +177,11 @@ async function generateReport(shop) {
       rows: [
         infoRow("Registrar", latestWhois.registrar),
         infoRow("Registrant", latestWhois.registrant_name, altRowShading),
-        infoRow("Organisatie", latestWhois.registrant_org),
+        infoRow("Organisatie", latestWhois.registrant_organization),
         infoRow("Land", latestWhois.registrant_country, altRowShading),
-        infoRow("Geregistreerd", latestWhois.creation_date),
+        infoRow("Geregistreerd", latestWhois.registration_date),
         infoRow("Vervalt", latestWhois.expiration_date, altRowShading),
-        infoRow("Domeinleeftijd", latestWhois.domain_age ? `${latestWhois.domain_age} dagen` : '—'),
+        infoRow("Domeinleeftijd", latestWhois.domain_age_days ? `${latestWhois.domain_age_days} dagen` : '—'),
         infoRow("Privacy beschermd", latestWhois.privacy_protected ? "Ja" : "Nee", altRowShading),
       ]
     }));
