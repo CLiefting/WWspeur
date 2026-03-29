@@ -13,7 +13,7 @@ export default function DashboardPage() {
   const [scanStatus, setScanStatus] = useState('');
   const [error, setError] = useState('');
   const [csvResult, setCsvResult] = useState(null);
-  const [maxPages, setMaxPages] = useState(200);
+  const [maxPages, setMaxPages] = useState(50);
   const [scanningUrl, setScanningUrl] = useState('');
   const [currentScanId, setCurrentScanId] = useState(null);
   const [currentShopId, setCurrentShopId] = useState(null);
@@ -109,6 +109,7 @@ export default function DashboardPage() {
     try {
       await _runScanWithPolling(shopId, shopUrl);
       if (!abortRef.current) {
+        await loadShops();
         navigate(`/shop/${shopId}`);
       }
     } catch (err) {
@@ -193,6 +194,7 @@ export default function DashboardPage() {
               completedShops: [...(p.completedShops || []), { domain: shop.domain, status: 'ok' }],
               shopProgress: null,
             }));
+            loadShops(); // Update list to show scan status
           }
         } catch (err) {
           console.error('Scan failed for', shop.domain, err);

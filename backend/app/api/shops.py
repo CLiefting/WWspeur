@@ -241,15 +241,28 @@ def list_shops(
         query = query.filter(Shop.risk_level == risk_level)
 
     total = query.count()
+
+    # Sort: unscanned first (alphabetical), then scanned (alphabetical)
+    from app.models.scan import Scan
+    from sqlalchemy import case, exists
+
+    has_scan = (
+        db.query(Scan.id)
+        .filter(Scan.shop_id == Shop.id, Scan.status == "completed")
+        .exists()
+    )
+
     shops = (
-        query.order_by(Shop.created_at.desc())
+        query.order_by(
+            case((has_scan, 1), else_=0).asc(),  # 0=unscanned first, 1=scanned
+            Shop.domain.asc(),
+        )
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
     )
 
     # Add last_scanned and scan_stats from related records
-    from app.models.scan import Scan
     from app.models.collectors import ScrapeRecord
     import json as json_mod
 
