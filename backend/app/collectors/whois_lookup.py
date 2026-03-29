@@ -121,8 +121,18 @@ def lookup_whois(url: str) -> dict:
     }
     
     try:
-        w = whois.whois(domain)
-        
+        import signal
+
+        def _timeout_handler(signum, frame):
+            raise TimeoutError("WHOIS timeout")
+
+        signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(15)
+        try:
+            w = whois.whois(domain)
+        finally:
+            signal.alarm(0)
+
         if w is None or (hasattr(w, 'status') and w.status is None):
             result["error"] = "Geen WHOIS data gevonden"
             return result
@@ -170,6 +180,9 @@ def lookup_whois(url: str) -> dict:
             f"privacy={result['is_privacy_protected']}"
         )
         
+    except TimeoutError:
+        logger.warning(f"WHOIS timeout voor {domain}")
+        result["error"] = "WHOIS lookup timeout"
     except whois.parser.PywhoisError as e:
         error_msg = str(e)
         logger.warning(f"WHOIS fout voor {domain}: {error_msg}")

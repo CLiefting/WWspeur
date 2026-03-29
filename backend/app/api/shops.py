@@ -8,6 +8,8 @@ from urllib.parse import urlparse
 from typing import Optional
 import csv
 import io
+import ipaddress
+import socket
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -17,6 +19,56 @@ from app.schemas.shop import ShopCreate, ShopResponse, ShopListResponse, ShopUpd
 from app.schemas.scan import ShopDetailResponse
 
 router = APIRouter()
+
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+]
+
+_MAX_CSV_SIZE = 5 * 1024 * 1024  # 5 MB
+
+
+def _is_private_ip(ip_str: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip_str)
+        return any(addr in net for net in _PRIVATE_NETWORKS)
+    except ValueError:
+        return False
+
+
+def validate_public_url(url: str) -> None:
+    """Raise HTTPException if the URL resolves to a private/internal IP (SSRF prevention)."""
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+
+    blocked_hostnames = {"localhost", "metadata.google.internal", "169.254.169.254"}
+    if hostname in blocked_hostnames:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Interne adressen zijn niet toegestaan",
+        )
+
+    # Resolve hostname and check if it points to a private IP
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+        for info in infos:
+            ip = info[4][0]
+            if _is_private_ip(ip):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Interne adressen zijn niet toegestaan",
+                )
+    except HTTPException:
+        raise
+    except OSError:
+        pass  # DNS resolution failed — laat de collector het zelf afhandelen
 
 
 def extract_domain(url: str) -> str:
@@ -47,6 +99,7 @@ def create_shop(
 ):
     """Add a new webshop to investigate."""
     url = normalize_url(shop_data.url)
+    validate_public_url(url)
     domain = extract_domain(url)
 
     # Check if URL already exists
@@ -87,7 +140,12 @@ async def import_csv(
             detail="Alleen CSV-bestanden zijn toegestaan",
         )
 
-    content = await file.read()
+    content = await file.read(_MAX_CSV_SIZE + 1)
+    if len(content) > _MAX_CSV_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="CSV-bestand is te groot (max 5 MB)",
+        )
     text = content.decode("utf-8-sig")  # Handle BOM
 
     added = []
@@ -125,6 +183,7 @@ async def import_csv(
 
         try:
             url = normalize_url(raw_url)
+            validate_public_url(url)
             domain = extract_domain(url)
 
             existing = db.query(Shop).filter(Shop.url == url).first()
@@ -306,21 +365,102 @@ def download_report(
         )
 
         if result.returncode != 0:
+            os.unlink(tmp_path)
             raise HTTPException(
                 status_code=500,
                 detail="Rapport generatie mislukt: {}".format(result.stderr[:200]),
             )
 
-        filename = "WWSpeur_{}_{}.docx".format(
+        from datetime import datetime as dt
+        timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+        filename = "wwspeur_{}_{}.docx".format(
             shop.domain.replace(".", "_"),
-            shop_data.get("created_at", "")[:10],
+            timestamp,
         )
+
+        # background_tasks verwijdert het bestand nadat FileResponse het heeft verstuurd
+        from fastapi import BackgroundTasks
+        bg = BackgroundTasks()
+        bg.add_task(os.unlink, tmp_path)
 
         return FileResponse(
             path=tmp_path,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             filename=filename,
+            background=bg,
         )
 
     except subprocess.TimeoutExpired:
+        os.unlink(tmp_path)
         raise HTTPException(status_code=500, detail="Rapport generatie timeout")
+
+
+@router.post("/batch-reports")
+def download_batch_reports(
+    shop_ids: list[int],
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Generate reports for multiple shops and return as ZIP."""
+    import json
+    import subprocess
+    import tempfile
+    import os
+    import zipfile
+    from fastapi.responses import FileResponse
+    from fastapi import BackgroundTasks
+    from datetime import datetime as dt
+    from app.schemas.scan import ShopDetailResponse
+
+    report_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "reports")
+    script_path = os.path.join(report_dir, "generate_report.js")
+
+    timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+    zip_path = tempfile.mktemp(suffix=".zip")
+
+    def serialize(obj):
+        if hasattr(obj, 'isoformat'):
+            return obj.isoformat()
+        return obj
+
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for shop_id in shop_ids[:50]:  # Max 50 reports
+            shop = db.query(Shop).filter(Shop.id == shop_id).first()
+            if not shop:
+                continue
+
+            try:
+                shop_data = ShopDetailResponse.from_orm(shop).dict()
+                shop_json = json.dumps(shop_data, default=serialize)
+
+                with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+                    tmp_path = tmp.name
+
+                result = subprocess.run(
+                    ["node", script_path, tmp_path],
+                    input=shop_json,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+
+                if result.returncode == 0:
+                    docx_name = "wwspeur_{}_{}.docx".format(
+                        shop.domain.replace(".", "_"), timestamp
+                    )
+                    zf.write(tmp_path, docx_name)
+
+                os.unlink(tmp_path)
+
+            except Exception as e:
+                continue
+
+    bg = BackgroundTasks()
+    bg.add_task(os.unlink, zip_path)
+
+    return FileResponse(
+        path=zip_path,
+        media_type="application/zip",
+        filename="wwspeur_rapporten_{}.zip".format(timestamp),
+        background=bg,
+    )

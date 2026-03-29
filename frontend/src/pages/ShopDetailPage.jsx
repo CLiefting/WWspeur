@@ -213,7 +213,7 @@ export default function ShopDetailPage() {
             <button
               onClick={async () => {
                 try {
-                  const token = localStorage.getItem('token');
+                  const token = localStorage.getItem('wwspeur_token');
                   const response = await fetch(`/api/v1/shops/${id}/report`, {
                     headers: { 'Authorization': `Bearer ${token}` },
                   });
@@ -222,7 +222,9 @@ export default function ShopDetailPage() {
                   const url = window.URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;
-                  a.download = `WWSpeur_${shop.domain}_rapport.docx`;
+                  const contentDisp = response.headers.get('content-disposition');
+                  const match = contentDisp?.match(/filename="?([^"]+)"?/);
+                  a.download = match ? match[1] : `wwspeur_${shop.domain.replace(/\./g,'_')}_${new Date().toISOString().slice(0,19).replace(/[:-]/g,'')}.docx`;
                   a.click();
                   window.URL.revokeObjectURL(url);
                 } catch (err) {

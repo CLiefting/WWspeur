@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(psql webwinkel_investigator -c \"ALTER TABLE scans ADD COLUMN IF NOT EXISTS progress TEXT;\")",
+      "Bash(python3 -c \"import secrets; print\\(secrets.token_hex\\(32\\)\\)\")"
+    ]
+  }
+}

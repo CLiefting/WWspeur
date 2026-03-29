@@ -498,6 +498,7 @@ def save_crawl_result(result, shop_id, scan_id, db_session):
         "errors": result.errors,
     }
     record.raw_html_hash = hashlib.sha256(json.dumps(detailed, sort_keys=True).encode()).hexdigest()
+    record.meta_description = json.dumps(detailed)
     db_session.add(record)
     db_session.commit()
     return record

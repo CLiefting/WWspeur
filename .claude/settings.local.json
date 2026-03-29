@@ -7,6 +7,9 @@
       "Bash(python3 -c \"from app.models.collectors import AdTrackerRecord; print\\(''Model OK''\\)\")",
       "Bash(python3 -c \"from app.main import app; print\\(''App import OK''\\)\")",
       "Bash(python3 -c \":*)"
+    ],
+    "additionalDirectories": [
+      "/Users/charlesliefting"
     ]
   }
 }

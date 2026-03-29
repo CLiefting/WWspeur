@@ -14,42 +14,23 @@ export function setAuthFailureCallback(callback) {
   authFailureCallback = callback;
 }
 
-function getToken() {
-  return localStorage.getItem('wwspeur_token');
-}
-
-function setToken(token) {
-  console.debug('[API] setToken called');
-  localStorage.setItem('wwspeur_token', token);
-}
-
-function clearToken() {
-  console.debug('[API] clearToken called');
-  localStorage.removeItem('wwspeur_token');
-}
-
 async function request(endpoint, options = {}) {
-  const token = getToken();
   const headers = {
     'Content-Type': 'application/json',
     ...options.headers,
   };
-
-  if (token) {
-    headers['Authorization'] = 'Bearer ' + token;
-  }
 
   console.debug('[API]', options.method || 'GET', endpoint);
 
   const response = await fetch(API_BASE + endpoint, {
     ...options,
     headers,
+    credentials: 'include', // stuur httpOnly cookie mee
   });
 
   console.debug('[API] Response:', response.status, endpoint);
 
   if (response.status === 401) {
-    clearToken();
     if (authFailureCallback) authFailureCallback();
     throw new ApiError('Niet ingelogd', 401);
   }
@@ -69,13 +50,10 @@ async function request(endpoint, options = {}) {
 }
 
 async function requestFormData(endpoint, formData) {
-  const token = getToken();
-  const headers = {};
-  if (token) {
-    headers['Authorization'] = 'Bearer ' + token;
-  }
   const response = await fetch(API_BASE + endpoint, {
-    method: 'POST', headers, body: formData,
+    method: 'POST',
+    body: formData,
+    credentials: 'include',
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -94,10 +72,12 @@ export const auth = {
 
   async login(username, password) {
     console.debug('[API] Login for:', username);
+    // De server zet een httpOnly cookie en geeft ook het token terug
     const response = await fetch(API_BASE + '/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ username, password }),
+      credentials: 'include',
     });
 
     console.debug('[API] Login status:', response.status);
@@ -107,10 +87,7 @@ export const auth = {
       throw new ApiError(body.detail || 'Login mislukt', response.status, body.detail);
     }
 
-    const data = await response.json();
-    console.debug('[API] Login OK, storing token');
-    setToken(data.access_token);
-    return data;
+    return response.json();
   },
 
   async getProfile() {
@@ -121,13 +98,18 @@ export const auth = {
     return request('/auth/me', { method: 'PUT', body: JSON.stringify(data) });
   },
 
-  logout() {
-    clearToken();
-    // Gebruik geen window.location - laat React routing het afhandelen
+  async logout() {
+    await request('/auth/logout', { method: 'POST' }).catch(() => {});
   },
 
-  isLoggedIn() {
-    return !!getToken();
+  // isLoggedIn kan niet meer op localStorage steunen — controleer via getProfile
+  async isLoggedIn() {
+    try {
+      await this.getProfile();
+      return true;
+    } catch {
+      return false;
+    }
   },
 };
 
@@ -157,7 +139,7 @@ export const shops = {
 };
 
 export const scans = {
-  async create(shopId, collectors = ['scrape'], maxPages = 200) {
+  async create(shopId, collectors = ['scrape'], maxPages = 50) {
     return request('/scans/', {
       method: 'POST',
       body: JSON.stringify({ shop_id: shopId, collectors, max_pages: maxPages }),
@@ -172,7 +154,6 @@ export const scans = {
   },
   async pollUntilDone(scanId, onUpdate, onProgress, intervalMs = 1500, shouldAbort = null) {
     while (true) {
-      // Check if polling should stop
       if (shouldAbort && shouldAbort()) {
         console.debug('[API] Polling aborted');
         return null;
@@ -181,7 +162,7 @@ export const scans = {
       try {
         const progressData = await this.getProgress(scanId);
         if (onProgress) onProgress(progressData);
-        
+
         if (['completed', 'failed', 'partial'].includes(progressData.status)) {
           const scan = await this.get(scanId);
           if (onUpdate) onUpdate(scan);
@@ -192,7 +173,7 @@ export const scans = {
         if (onUpdate) onUpdate(scan);
         if (['completed', 'failed', 'partial'].includes(scan.status)) return scan;
       }
-      
+
       await new Promise((r) => setTimeout(r, intervalMs));
     }
   },

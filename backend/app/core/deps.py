@@ -1,26 +1,36 @@
 """
 FastAPI dependencies: authentication, database session, etc.
 """
-from fastapi import Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+from typing import Optional
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.models.user import User
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+
+_COOKIE_NAME = "wwspeur_token"
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    bearer_token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
-    """Get the current authenticated user from JWT token."""
+    """
+    Authenticate via httpOnly cookie (primary) or Bearer token (fallback for API clients).
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Ongeldige inloggegevens",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    token = request.cookies.get(_COOKIE_NAME) or bearer_token
+    if not token:
+        raise credentials_exception
 
     payload = decode_access_token(token)
     if payload is None:

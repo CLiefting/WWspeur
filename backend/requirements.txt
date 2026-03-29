@@ -29,3 +29,4 @@ python-csv==0.0.13
 # Utilities
 python-dotenv==1.0.1
 httpx==0.27.2
+slowapi==0.1.9

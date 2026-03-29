@@ -18,6 +18,9 @@ export default function DashboardPage() {
   const [currentScanId, setCurrentScanId] = useState(null);
   const [currentShopId, setCurrentShopId] = useState(null);
   const abortRef = useRef(false);
+  const [batchScanning, setBatchScanning] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentDomain: '' });
+  const [batchWithReports, setBatchWithReports] = useState(true);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
 
@@ -136,9 +139,100 @@ export default function DashboardPage() {
     const shopUrl = scanningUrl;
     handleStopScan();
     if (shopId) {
-      // Small delay to let state reset
       setTimeout(() => handleScanExisting(shopId), 100);
     }
+  };
+
+  const handleBatchScan = async () => {
+    if (batchScanning) return;
+    setBatchScanning(true);
+    abortRef.current = false;
+
+    try {
+      // Load ALL shops (not just current page)
+      let allShops = [];
+      let pg = 1;
+      while (true) {
+        const data = await shops.list(pg, 100, '');
+        allShops = [...allShops, ...data.shops];
+        if (allShops.length >= data.total) break;
+        pg++;
+      }
+
+      setBatchProgress({ current: 0, total: allShops.length, currentDomain: '' });
+      const scannedShopIds = [];
+
+      for (let i = 0; i < allShops.length; i++) {
+        if (abortRef.current) break;
+
+        const shop = allShops[i];
+        setBatchProgress({ current: i + 1, total: allShops.length, currentDomain: shop.domain });
+
+        try {
+          const scan = await scans.create(shop.id, ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape', 'kvk'], maxPages);
+
+          // Poll until done
+          await scans.pollUntilDone(
+            scan.id,
+            () => {},
+            () => {},
+            2000,
+            () => abortRef.current,
+          );
+
+          if (!abortRef.current) {
+            scannedShopIds.push(shop.id);
+          }
+        } catch (err) {
+          console.error('Scan failed for', shop.domain, err);
+        }
+      }
+
+      // Download batch reports if enabled
+      if (batchWithReports && scannedShopIds.length > 0 && !abortRef.current) {
+        setBatchProgress(p => ({ ...p, currentDomain: 'Rapporten genereren...' }));
+
+        try {
+          const token = localStorage.getItem('wwspeur_token');
+          const response = await fetch('/api/v1/shops/batch-reports', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(scannedShopIds),
+          });
+
+          if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const contentDisp = response.headers.get('content-disposition');
+            const match = contentDisp?.match(/filename="?([^"]+)"?/);
+            a.download = match ? match[1] : 'wwspeur_rapporten.zip';
+            a.click();
+            window.URL.revokeObjectURL(url);
+          }
+        } catch (err) {
+          console.error('Batch reports failed', err);
+        }
+      }
+
+      await loadShops();
+
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBatchScanning(false);
+      setBatchProgress({ current: 0, total: 0, currentDomain: '' });
+    }
+  };
+
+  const handleStopBatch = () => {
+    abortRef.current = true;
+    setBatchScanning(false);
+    setBatchProgress({ current: 0, total: 0, currentDomain: '' });
   };
 
   const handleCSVImport = async (e) => {
@@ -295,7 +389,71 @@ export default function DashboardPage() {
             {maxPages}
           </span>
         </div>
+
+        {/* Batch scan controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+          <button
+            onClick={handleBatchScan}
+            disabled={batchScanning || totalShops === 0}
+            style={{
+              background: batchScanning ? 'transparent' : 'linear-gradient(135deg, var(--gold-dim), var(--gold))',
+              border: batchScanning ? '1px solid var(--border)' : 'none',
+              color: batchScanning ? 'var(--text-muted)' : 'var(--bg-primary)',
+              fontSize: 12, fontWeight: 600,
+              padding: '8px 18px', borderRadius: 6,
+              transition: 'all 0.2s',
+            }}
+          >
+            {batchScanning ? `Scannen ${batchProgress.current}/${batchProgress.total}...` : `Scan alle (${totalShops})`}
+          </button>
+          {batchScanning && (
+            <button
+              onClick={handleStopBatch}
+              style={{
+                background: 'transparent', border: '1px solid var(--danger)',
+                color: 'var(--danger)', fontSize: 12, fontWeight: 500,
+                padding: '8px 14px', borderRadius: 6,
+              }}
+            >
+              Stop
+            </button>
+          )}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+            <input
+              type="checkbox"
+              checked={batchWithReports}
+              onChange={e => setBatchWithReports(e.target.checked)}
+              style={{ accentColor: 'var(--gold)' }}
+            />
+            Rapporten downloaden
+          </label>
+        </div>
       </div>
+
+      {/* Batch scanning progress */}
+      {batchScanning && (
+        <div style={{
+          background: 'var(--bg-card)', border: '1px solid var(--gold-dim)',
+          borderRadius: 10, padding: '16px 20px', marginBottom: 24,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div style={{ fontSize: 13, color: 'var(--gold-light)' }}>
+              Batch scan: {batchProgress.current} / {batchProgress.total}
+            </div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--gold)' }}>
+              {batchProgress.currentDomain}
+            </div>
+          </div>
+          <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%',
+              width: `${batchProgress.total > 0 ? (batchProgress.current / batchProgress.total) * 100 : 0}%`,
+              background: 'linear-gradient(90deg, var(--gold-dim), var(--gold))',
+              borderRadius: 2, transition: 'width 0.5s ease',
+            }} />
+          </div>
+        </div>
+      )}
 
       {/* Scanning indicator with progress */}
       {isScanning && (

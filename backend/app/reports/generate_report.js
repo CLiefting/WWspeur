@@ -46,12 +46,13 @@ function headerCell(text, width) {
   });
 }
 function cell(text, width, opts = {}) {
+  const display = (text === null || text === undefined || text === 'null' || text === 'undefined') ? '' : String(text);
   return new TableCell({
     borders, width: { size: width, type: WidthType.DXA },
     margins: cellMargins,
     shading: opts.shading,
     children: [new Paragraph({
-      children: [new TextRun({ text: String(text || '—'), font: "Arial", size: 20, bold: opts.bold, color: opts.color })]
+      children: [new TextRun({ text: display || '—', font: "Arial", size: 20, bold: opts.bold, color: opts.color })]
     })]
   });
 }
@@ -86,8 +87,10 @@ async function generateReport(shop) {
     children: [new TextRun({ text: "WWSpeur Onderzoeksrapport", font: "Arial", size: 36, bold: true, color: "2B3A4E" })] }));
   children.push(new Paragraph({ spacing: { after: 50 },
     children: [new TextRun({ text: shop.domain, font: "Arial", size: 28, color: "D4A843" })] }));
+  const latestScan = shop.scans?.[shop.scans?.length - 1];
+  const scanDate = latestScan?.completed_at ? new Date(latestScan.completed_at).toLocaleString('nl-NL') : 'onbekend';
   children.push(new Paragraph({ spacing: { after: 200 },
-    children: [new TextRun({ text: `URL: ${shop.url}  |  Rapport gegenereerd: ${new Date().toLocaleDateString('nl-NL')}`, font: "Arial", size: 18, color: "888888" })] }));
+    children: [new TextRun({ text: `URL: ${shop.url}  |  Gescand: ${scanDate}  |  Rapport: ${new Date().toLocaleString('nl-NL')}`, font: "Arial", size: 18, color: "888888" })] }));
 
   // ── Samenvatting ──
   children.push(heading("Samenvatting"));
@@ -119,11 +122,21 @@ async function generateReport(shop) {
   let btwDisplay = '—';
   try { const p = JSON.parse(btwVal); btwDisplay = Array.isArray(p) ? p.join(', ') : String(p); } catch { if (btwVal) btwDisplay = btwVal; }
 
+  // Parse sources
+  const srcDetails = latestScrape ? parseJSONObj(latestScrape.meta_description) : {};
+  const kvkSources = srcDetails.kvk_sources || {};
+  const btwSources = srcDetails.btw_sources || {};
+
+  const kvkSourceList = Object.values(kvkSources).flat().slice(0,3);
+  const btwSourceList = Object.values(btwSources).flat().slice(0,3);
+
   children.push(new Table({
     width: { size: TABLE_WIDTH, type: WidthType.DXA }, columnWidths: COL2,
     rows: [
       infoRow("KvK-nummer", kvkDisplay),
-      infoRow("BTW-nummer", btwDisplay, altRowShading),
+      ...(kvkSourceList.length > 0 ? [infoRow("  Gevonden op", kvkSourceList.join(", "), altRowShading)] : []),
+      infoRow("BTW-nummer", btwDisplay, kvkSourceList.length > 0 ? undefined : altRowShading),
+      ...(btwSourceList.length > 0 ? [infoRow("  Gevonden op", btwSourceList.join(", "), altRowShading)] : []),
     ]
   }));
 
@@ -136,7 +149,7 @@ async function generateReport(shop) {
     children.push(para(""));
     children.push(para("Bankrekeningen (IBAN):", { bold: true }));
     const byCountry = {};
-    ibans.forEach(iban => { const cc = iban.substring(0,2).toUpperCase(); if (!byCountry[cc]) byCountry[cc] = []; byCountry[cc].push(iban); });
+    ibans.filter(Boolean).forEach(iban => { const cc = (iban || '').substring(0,2).toUpperCase(); if (!byCountry[cc]) byCountry[cc] = []; byCountry[cc].push(iban); });
     const sorted = Object.keys(byCountry).sort((a,b) => a === 'NL' ? -1 : b === 'NL' ? 1 : a.localeCompare(b));
 
     const ibanRows = [new TableRow({ children: [headerCell("Land", COL3[0]), headerCell("IBAN", COL3[1]), headerCell("Opmerking", COL3[2])] })];
@@ -301,20 +314,43 @@ async function generateReport(shop) {
     }
   }
 
-  // ── Contact gegevens ──
+  // ── Contact gegevens met bronpagina's ──
   children.push(heading("Gevonden contactgegevens"));
+
+  // Parse sources from meta_description (where detailed data is stored)
+  const emailSources = srcDetails.email_sources || {};
+  const phoneSources = srcDetails.phone_sources || {};
+  const addressSources = srcDetails.address_sources || {};
 
   if (emails.length > 0) {
     children.push(para("E-mailadressen:", { bold: true }));
-    emails.forEach(e => children.push(para(`  ${e}`, { size: 20 })));
+    emails.forEach(e => {
+      const sources = emailSources[e] || [];
+      children.push(para(`  ${e}`, { size: 20 }));
+      if (sources.length > 0) {
+        children.push(para(`    Gevonden op: ${sources.slice(0,3).join(', ')}`, { size: 16, color: "888888" }));
+      }
+    });
   }
   if (phones.length > 0) {
     children.push(para("Telefoonnummers:", { bold: true }));
-    phones.forEach(p => children.push(para(`  ${p}`, { size: 20 })));
+    phones.forEach(p => {
+      const sources = phoneSources[p] || [];
+      children.push(para(`  ${p}`, { size: 20 }));
+      if (sources.length > 0) {
+        children.push(para(`    Gevonden op: ${sources.slice(0,3).join(', ')}`, { size: 16, color: "888888" }));
+      }
+    });
   }
   if (addresses.length > 0) {
     children.push(para("Adressen:", { bold: true }));
-    addresses.forEach(a => children.push(para(`  ${a}`, { size: 20 })));
+    addresses.forEach(a => {
+      const sources = addressSources[a] || [];
+      children.push(para(`  ${a}`, { size: 20 }));
+      if (sources.length > 0) {
+        children.push(para(`    Gevonden op: ${sources.slice(0,3).join(', ')}`, { size: 16, color: "888888" }));
+      }
+    });
   }
 
   // Social media

@@ -36,7 +36,8 @@ class Scan(Base, TimestampMixin):
     
     collectors_requested = Column(String(500), nullable=True)
     collectors_completed = Column(String(500), nullable=True)
-    
+
+    progress = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
 
     # Relationships

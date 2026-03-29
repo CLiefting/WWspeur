@@ -88,7 +88,7 @@ AD_PATTERNS = {
 def _extract_domain(url):
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
-    return urlparse(url).netloc.lower().lstrip("www.")
+    return urlparse(url).netloc.lower().removeprefix("www.")
 
 
 def _search_id_online(tracker_id, platform_name):
@@ -600,7 +600,7 @@ def save_ad_tracker_result(result, shop_id, scan_id, db_session):
     )
 
     db_session.add(record)
-    db_session.commit()
+    db_session.flush()
 
     # Now check database cross-references
     db_matches = check_db_cross_references(
@@ -618,7 +618,6 @@ def save_ad_tracker_result(result, shop_id, scan_id, db_session):
                 "other_shops": match["shops"],
             })
         record.cross_references = json.dumps(existing_xrefs)
-        db_session.commit()
 
     return record
 

@@ -1,7 +1,7 @@
 """
 Authentication API endpoints: register, login, profile.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -9,14 +9,18 @@ from app.core.security import verify_password, get_password_hash, create_access_
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.schemas.user import UserRegister, UserLogin, Token, UserResponse, UserUpdate
+from app.main import limiter
 
 router = APIRouter()
 
+_COOKIE_NAME = "wwspeur_token"
+_COOKIE_MAX_AGE = 60 * 60 * 24  # 24 uur
+
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register(user_data: UserRegister, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def register(request: Request, user_data: UserRegister, db: Session = Depends(get_db)):
     """Register a new user account."""
-    # Check if email already exists
     existing_email = db.query(User).filter(User.email == user_data.email).first()
     if existing_email:
         raise HTTPException(
@@ -24,7 +28,6 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
             detail="Dit e-mailadres is al in gebruik",
         )
 
-    # Check if username already exists
     existing_username = db.query(User).filter(User.username == user_data.username).first()
     if existing_username:
         raise HTTPException(
@@ -32,7 +35,6 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
             detail="Deze gebruikersnaam is al in gebruik",
         )
 
-    # Create user
     user = User(
         email=user_data.email,
         username=user_data.username,
@@ -47,12 +49,17 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+@limiter.limit("20/minute")
+def login(
+    request: Request,
+    response: Response,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
     """
     Login with username and password.
-    Uses OAuth2 form for Swagger UI compatibility.
+    Sets a httpOnly cookie and returns the token in the response body.
     """
-    # Find user by username
     user = db.query(User).filter(User.username == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
@@ -67,10 +74,24 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             detail="Account is gedeactiveerd",
         )
 
-    # Create access token
     access_token = create_access_token(data={"sub": str(user.id)})
 
+    response.set_cookie(
+        key=_COOKIE_NAME,
+        value=access_token,
+        httponly=True,
+        samesite="lax",
+        max_age=_COOKIE_MAX_AGE,
+        secure=False,  # Zet op True bij HTTPS productie
+    )
+
     return Token(access_token=access_token)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(response: Response):
+    """Clear the authentication cookie."""
+    response.delete_cookie(key=_COOKIE_NAME)
 
 
 @router.get("/me", response_model=UserResponse)
