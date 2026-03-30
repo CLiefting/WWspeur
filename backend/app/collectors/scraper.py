@@ -35,7 +35,32 @@ PRIORITY_PAGE_PATTERNS = [
     r"/retour", r"/return", r"/retourneren",
     r"/klantenservice", r"/customer-service",
     r"/impressum", r"/disclaimer", r"/bedrijfsgegevens",
+    r"/betaal", r"/betalings", r"/betaalmethod", r"/payment",
+    r"/verzend", r"/shipping", r"/levering", r"/delivery",
+    r"/over", r"/info", r"/wie-zijn",
+    r"/faq", r"/help", r"/service",
+    r"/sitemap",
+    r"/bankgegeven", r"/rekeningnummer",
 ]
+
+# URL-patronen die duiden op productpagina's — laagste prioriteit
+PRODUCT_PAGE_PATTERNS = [
+    re.compile(r"/product[s]?/", re.I),
+    re.compile(r"/producten/", re.I),
+    re.compile(r"/artikel[en]?/", re.I),
+    re.compile(r"/item[s]?/", re.I),
+    re.compile(r"/collections?/.+/.+", re.I),   # Shopify: /collections/categorie/product
+    re.compile(r"/shop/[^/]+-\d{4,}", re.I),    # /shop/naam-12345
+    re.compile(r"/p/[a-z0-9\-]{5,}", re.I),     # /p/product-slug
+    re.compile(r"/[a-z0-9\-]+-\d{6,}", re.I),   # slug-met-lang-nummer
+    re.compile(r"[?&](product|item|id)=\d+", re.I),
+]
+
+
+def _is_product_url(url: str) -> bool:
+    """Heuristische check of een URL waarschijnlijk een productpagina is."""
+    path_and_query = url.split("://", 1)[-1].split("/", 1)[-1] if "/" in url else ""
+    return any(p.search("/" + path_and_query) for p in PRODUCT_PAGE_PATTERNS)
 
 EMAIL_PATTERN = re.compile(
     r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", re.IGNORECASE,
@@ -368,6 +393,9 @@ def crawl_website(start_url, max_pages=DEFAULT_MAX_PAGES,
     visited = set()
     priority_queue = []
     normal_queue = [_normalize_url(start_url)]
+    product_queue = []
+    # Max productpagina's: hoogstens 20% van budget, minimaal 3
+    max_product_pages = max(3, max_pages // 5)
 
     session = requests.Session()
     session.headers.update({
@@ -385,13 +413,24 @@ def crawl_website(start_url, max_pages=DEFAULT_MAX_PAGES,
             if any(p in path for p in PRIORITY_PAGE_PATTERNS):
                 if normalized not in [_normalize_url(u) for u in priority_queue]:
                     priority_queue.append(link)
+            elif _is_product_url(link):
+                if normalized not in [_normalize_url(u) for u in product_queue]:
+                    product_queue.append(link)
             else:
                 if normalized not in [_normalize_url(u) for u in normal_queue]:
                     normal_queue.append(link)
 
     page_count = 0
-    while (priority_queue or normal_queue) and page_count < max_pages:
-        url = priority_queue.pop(0) if priority_queue else normal_queue.pop(0)
+    product_pages_crawled = 0
+    while (priority_queue or normal_queue or product_queue) and page_count < max_pages:
+        if priority_queue:
+            url = priority_queue.pop(0)
+        elif normal_queue:
+            url = normal_queue.pop(0)
+        elif product_pages_crawled < max_product_pages:
+            url = product_queue.pop(0)
+        else:
+            break
         normalized = _normalize_url(url)
         if normalized in visited:
             continue
@@ -414,6 +453,8 @@ def crawl_website(start_url, max_pages=DEFAULT_MAX_PAGES,
 
         page_count += 1
         result.pages_crawled += 1
+        if _is_product_url(url):
+            product_pages_crawled += 1
 
         if page.page_title:
             result.page_titles[url] = page.page_title
