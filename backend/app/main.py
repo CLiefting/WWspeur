@@ -49,7 +49,9 @@ def health_check():
 from app.api.auth import router as auth_router
 from app.api.shops import router as shops_router
 from app.api.scans import router as scans_router
+from app.api.settings import router as settings_router
 
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authenticatie"])
 app.include_router(shops_router, prefix="/api/v1/shops", tags=["Webwinkels"])
 app.include_router(scans_router, prefix="/api/v1/scans", tags=["Scans"])
+app.include_router(settings_router, prefix="/api/v1/settings", tags=["Instellingen"])

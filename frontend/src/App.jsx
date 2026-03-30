@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ShopDetailPage from './pages/ShopDetailPage';
 import OverviewPage from './pages/OverviewPage';
+import SettingsPage from './pages/SettingsPage';
 import Header from './components/Header';
 
 function ProtectedRoute({ children }) {
@@ -44,6 +45,9 @@ function AppRoutes() {
         } />
         <Route path="/overview" element={
           <ProtectedRoute><OverviewPage /></ProtectedRoute>
+        } />
+        <Route path="/settings" element={
+          <ProtectedRoute><SettingsPage /></ProtectedRoute>
         } />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

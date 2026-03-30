@@ -44,6 +44,18 @@ export default function Header() {
           Dashboard
         </Link>
         <Link
+          to="/settings"
+          style={{
+            fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)',
+            textDecoration: 'none', padding: '6px 14px', borderRadius: 6,
+            border: '1px solid var(--border)', transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => { e.target.style.borderColor = 'var(--gold-dim)'; e.target.style.color = 'var(--gold)'; }}
+          onMouseLeave={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.color = 'var(--text-secondary)'; }}
+        >
+          Instellingen
+        </Link>
+        <Link
           to="/overview"
           style={{
             fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)',

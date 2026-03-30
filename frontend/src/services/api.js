@@ -180,4 +180,12 @@ export const scans = {
   },
 };
 
-export default { auth, shops, scans };
+export const settings = {
+  async list() { return request('/settings/'); },
+  async update(key, value) {
+    return request('/settings/' + key, { method: 'PUT', body: JSON.stringify({ value }) });
+  },
+  async clear(key) { return request('/settings/' + key, { method: 'DELETE' }); },
+};
+
+export default { auth, shops, scans, settings };
