@@ -218,10 +218,10 @@ async function generateReport(shop) {
     children.push(new Table({
       width: { size: TABLE_WIDTH, type: WidthType.DXA }, columnWidths: COL2,
       rows: [
-        infoRow("SSL actief", latestSSL.is_valid ? "Ja" : "Nee"),
+        infoRow("SSL actief", latestSSL.has_ssl ? "Ja" : "Nee"),
         infoRow("Uitgever", latestSSL.issuer, altRowShading),
         infoRow("Geldig vanaf", latestSSL.valid_from),
-        infoRow("Geldig tot", latestSSL.valid_to, altRowShading),
+        infoRow("Geldig tot", latestSSL.valid_until, altRowShading),
         infoRow("Verlopen", latestSSL.is_expired ? "JA" : "Nee"),
         infoRow("Self-signed", latestSSL.is_self_signed ? "JA" : "Nee", altRowShading),
       ]
