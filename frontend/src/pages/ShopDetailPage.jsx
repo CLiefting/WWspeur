@@ -68,6 +68,25 @@ export default function ShopDetailPage() {
   useEffect(() => { loadShop(); }, [id]);
 
   const [scanProgress, setScanProgress] = useState(null);
+  const [riskDetail, setRiskDetail] = useState(null);
+  const [recalculating, setRecalculating] = useState(false);
+
+  const handleRecalculateRisk = async () => {
+    setRecalculating(true);
+    try {
+      const token = localStorage.getItem('wwspeur_token');
+      const res = await fetch(`/api/v1/shops/${id}/recalculate-risk`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRiskDetail(data);
+        await loadShop();
+      }
+    } catch (err) { console.error(err); }
+    finally { setRecalculating(false); }
+  };
 
   const handleScan = async () => {
     setIsScanning(true);
@@ -95,6 +114,12 @@ export default function ShopDetailPage() {
         },
       );
       await loadShop();
+      // Herbereken risicoscore na scan
+      const token = localStorage.getItem('wwspeur_token');
+      const res = await fetch(`/api/v1/shops/${id}/recalculate-risk`, {
+        method: 'POST', headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) { setRiskDetail(await res.json()); await loadShop(); }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -322,6 +347,61 @@ export default function ShopDetailPage() {
       {/* Results */}
       {(latestScrape || latestWhois || latestSSL || latestDnsHttp || latestTech) && (
         <>
+          {/* Risicobeoordeling */}
+          {(() => {
+            const level = shop.risk_level || 'unknown';
+            const score = shop.risk_score;
+            const cfg = {
+              unknown:  { color: 'var(--text-muted)',  bg: 'var(--border)',              label: 'Onbekend' },
+              low:      { color: 'var(--success)',      bg: 'rgba(74,222,128,0.12)',      label: 'Laag risico' },
+              medium:   { color: 'var(--gold)',         bg: 'rgba(232,160,32,0.12)',      label: 'Gemiddeld risico' },
+              high:     { color: 'var(--danger)',       bg: 'rgba(248,113,113,0.12)',     label: 'Hoog risico' },
+              critical: { color: '#FF4444',             bg: 'rgba(248,113,113,0.25)',     label: 'Kritiek risico' },
+            }[level] || { color: 'var(--text-muted)', bg: 'var(--border)', label: level };
+            const tips = riskDetail?.tips || [];
+            return (
+              <div style={{
+                background: cfg.bg, border: `1px solid ${cfg.color}33`,
+                borderRadius: 10, padding: '16px 20px', marginBottom: 20,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: tips.length > 0 ? 12 : 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+                    <span style={{ fontSize: 22, fontWeight: 700, color: cfg.color }}>{cfg.label}</span>
+                    {score != null && (
+                      <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                        score: <span style={{ color: cfg.color, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{Math.round(score)}/100</span>
+                      </span>
+                    )}
+                    {score == null && (
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>— nog niet berekend</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleRecalculateRisk}
+                    disabled={recalculating}
+                    style={{
+                      background: 'transparent', border: `1px solid ${cfg.color}66`,
+                      color: cfg.color, fontSize: 11, padding: '4px 12px',
+                      borderRadius: 6, cursor: 'pointer', opacity: recalculating ? 0.5 : 1,
+                    }}
+                  >
+                    {recalculating ? 'Berekenen...' : 'Herbereken'}
+                  </button>
+                </div>
+                {tips.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {tips.map(t => (
+                      <div key={t.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                        <span style={{ color: 'var(--danger)', fontWeight: 700, minWidth: 28, textAlign: 'right' }}>−{t.impact}</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>{t.tip}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Stats row */}
           <div style={{
             display: 'grid',

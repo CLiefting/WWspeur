@@ -1,8 +1,10 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
+import { ScanProvider } from './hooks/useScan';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ShopDetailPage from './pages/ShopDetailPage';
+import OverviewPage from './pages/OverviewPage';
 import Header from './components/Header';
 
 function ProtectedRoute({ children }) {
@@ -40,6 +42,9 @@ function AppRoutes() {
         <Route path="/shop/:id" element={
           <ProtectedRoute><ShopDetailPage /></ProtectedRoute>
         } />
+        <Route path="/overview" element={
+          <ProtectedRoute><OverviewPage /></ProtectedRoute>
+        } />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </>
@@ -49,7 +54,9 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppRoutes />
+      <ScanProvider>
+        <AppRoutes />
+      </ScanProvider>
     </AuthProvider>
   );
 }

@@ -53,9 +53,11 @@ class WhoisResponse(BaseModel):
     registrant_country: Optional[str]
     registration_date: Optional[date]
     expiration_date: Optional[date]
+    updated_date: Optional[date]
     domain_age_days: Optional[int]
     is_privacy_protected: Optional[bool]
     name_servers: Optional[str]
+    raw_data: Optional[str]
     source: str
     collected_at: datetime
 
@@ -178,6 +180,7 @@ class TechResponse(BaseModel):
     has_trustmark: Optional[bool]
     trustmarks: Optional[str]
     payment_providers: Optional[str]
+    raw_data: Optional[str]
     source: str
     collected_at: datetime
 

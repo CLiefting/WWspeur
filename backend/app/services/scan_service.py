@@ -32,7 +32,15 @@ def _mark_collector_done(scan, collector_name, db):
         scan.status = "completed"
         scan.completed_at = datetime.now(timezone.utc)
         scan.error_message = None
-    db.commit()
+        db.commit()
+        # Bereken risicoscore nu alle collectors klaar zijn
+        try:
+            from app.services.risk_score import apply_risk_to_shop
+            apply_risk_to_shop(scan.shop_id, db)
+        except Exception as e:
+            logger.warning(f"Risicoscore berekening mislukt voor shop {scan.shop_id}: {e}")
+    else:
+        db.commit()
 
 
 def run_whois_collector(shop: Shop, scan: Scan, db: Session) -> dict:

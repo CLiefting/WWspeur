@@ -186,7 +186,9 @@ async def import_csv(
             validate_public_url(url)
             domain = extract_domain(url)
 
-            existing = db.query(Shop).filter(Shop.url == url).first()
+            existing = db.query(Shop).filter(
+                (Shop.url == url) | (Shop.domain == domain)
+            ).first()
             if existing:
                 skipped.append({"url": raw_url, "reason": "Bestaat al"})
                 continue
@@ -310,6 +312,60 @@ def list_shops(
                 "returns": latest_scrape.has_return_policy or False,
             }
 
+        # Add WHOIS summary
+        from app.models.collectors import WhoisRecord, SSLRecord, TrustmarkRecord, TechRecord
+        latest_whois = (
+            db.query(WhoisRecord)
+            .filter(WhoisRecord.shop_id == shop.id)
+            .order_by(WhoisRecord.id.desc())
+            .first()
+        )
+        if latest_whois:
+            if resp.scan_stats is None:
+                resp.scan_stats = {}
+            resp.scan_stats["registrar"] = latest_whois.registrar or None
+            resp.scan_stats["domain_age"] = latest_whois.domain_age_days
+            resp.scan_stats["registration_date"] = str(latest_whois.registration_date) if latest_whois.registration_date else None
+
+        # Add SSL summary
+        latest_ssl = (
+            db.query(SSLRecord)
+            .filter(SSLRecord.shop_id == shop.id)
+            .order_by(SSLRecord.id.desc())
+            .first()
+        )
+        if latest_ssl:
+            if resp.scan_stats is None:
+                resp.scan_stats = {}
+            resp.scan_stats["ssl_valid"] = latest_ssl.has_ssl or False
+            resp.scan_stats["ssl_issuer"] = latest_ssl.issuer
+
+        # Add trustmark summary
+        latest_tm = (
+            db.query(TrustmarkRecord)
+            .filter(TrustmarkRecord.shop_id == shop.id)
+            .order_by(TrustmarkRecord.id.desc())
+            .first()
+        )
+        if latest_tm:
+            if resp.scan_stats is None:
+                resp.scan_stats = {}
+            resp.scan_stats["trustmarks_verified"] = latest_tm.total_verified or 0
+            resp.scan_stats["trustpilot_score"] = latest_tm.trustpilot_score
+            resp.scan_stats["claimed_not_verified"] = latest_tm.claimed_not_verified or 0
+
+        # Add tech summary
+        latest_tech = (
+            db.query(TechRecord)
+            .filter(TechRecord.shop_id == shop.id)
+            .order_by(TechRecord.id.desc())
+            .first()
+        )
+        if latest_tech:
+            if resp.scan_stats is None:
+                resp.scan_stats = {}
+            resp.scan_stats["platform"] = latest_tech.ecommerce_platform or latest_tech.cms or None
+
         shop_responses.append(resp)
 
     return ShopListResponse(
@@ -318,6 +374,38 @@ def list_shops(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get("/risk-config", response_model=dict)
+def get_risk_config(current_user: User = Depends(get_current_user)):
+    """Geeft de scoringsregels en drempelwaarden terug."""
+    from app.services.risk_score import SCORING_RULES, THRESHOLDS, MAX_SCORE
+    return {
+        "thresholds": THRESHOLDS,
+        "max_score": MAX_SCORE,
+        "rules": [
+            {"key": r.key, "label": r.label, "points": r.points, "malus": r.malus, "tip": r.tip}
+            for r in SCORING_RULES
+        ],
+    }
+
+
+@router.post("/{shop_id}/recalculate-risk", response_model=dict)
+def recalculate_risk(
+    shop_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Herbereken de risicoscore voor een shop op basis van bestaande scandata."""
+    from app.services.risk_score import apply_risk_to_shop
+    result = apply_risk_to_shop(shop_id, db)
+    return {
+        "shop_id": shop_id,
+        "score": result.score,
+        "risk_level": result.risk_level,
+        "checks": result.checks,
+        "tips": result.tips,
+    }
 
 
 @router.get("/{shop_id}", response_model=ShopDetailResponse)
@@ -377,6 +465,29 @@ def delete_shop(
         )
 
     db.delete(shop)
+    db.commit()
+
+
+@router.delete("/{shop_id}/scans", status_code=status.HTTP_204_NO_CONTENT)
+def clear_shop_scans(
+    shop_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Clear all scan data for a shop but keep the shop itself."""
+    shop = db.query(Shop).filter(Shop.id == shop_id).first()
+    if not shop:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webwinkel niet gevonden")
+
+    from app.models.collectors import (
+        WhoisRecord, SSLRecord, ScrapeRecord, DnsHttpRecord,
+        TechRecord, TrustmarkRecord, AdTrackerRecord, KvkRecord,
+    )
+    from app.models.scan import Scan
+
+    for model in [KvkRecord, AdTrackerRecord, TrustmarkRecord, TechRecord, DnsHttpRecord, ScrapeRecord, WhoisRecord, SSLRecord]:
+        db.query(model).filter(model.shop_id == shop_id).delete()
+    db.query(Scan).filter(Scan.shop_id == shop_id).delete()
     db.commit()
 
 

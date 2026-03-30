@@ -131,6 +131,7 @@ export const shops = {
     return request('/shops/' + id, { method: 'PUT', body: JSON.stringify(data) });
   },
   async delete(id) { return request('/shops/' + id, { method: 'DELETE' }); },
+  async clearScans(id) { return request('/shops/' + id + '/scans', { method: 'DELETE' }); },
   async importCSV(file) {
     const formData = new FormData();
     formData.append('file', file);

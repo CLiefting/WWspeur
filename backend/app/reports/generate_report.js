@@ -140,51 +140,76 @@ async function generateReport(shop) {
     ]
   }));
 
-  // IBANs with country
+  // ── Betalingen & Bankgegevens ──
+  children.push(heading("Betalingen & Bankgegevens"));
+
+  // Payment providers from tech detection
+  const paymentProviders = latestTech ? parseJSON(latestTech.payment_providers) : [];
+
+  // IBANs with country — always shown
   const COUNTRIES = { NL:'Nederland', DE:'Duitsland', BE:'België', GB:'Verenigd Koninkrijk', FR:'Frankrijk', ES:'Spanje', IT:'Italië', PT:'Portugal', AT:'Oostenrijk', CH:'Zwitserland', PL:'Polen' };
   let ibans = [];
   try { const p = JSON.parse(ibanVal); ibans = Array.isArray(p) ? p : [p]; } catch { if (ibanVal) ibans = [ibanVal]; }
+  const validIbans = ibans.filter(Boolean);
 
-  if (ibans.length > 0) {
-    children.push(para(""));
-    children.push(para("Bankrekeningen (IBAN):", { bold: true }));
-    const byCountry = {};
-    ibans.filter(Boolean).forEach(iban => { const cc = (iban || '').substring(0,2).toUpperCase(); if (!byCountry[cc]) byCountry[cc] = []; byCountry[cc].push(iban); });
-    const sorted = Object.keys(byCountry).sort((a,b) => a === 'NL' ? -1 : b === 'NL' ? 1 : a.localeCompare(b));
-
-    const ibanRows = [new TableRow({ children: [headerCell("Land", COL3[0]), headerCell("IBAN", COL3[1]), headerCell("Opmerking", COL3[2])] })];
-    let alt = false;
-    sorted.forEach(cc => {
-      byCountry[cc].forEach(iban => {
-        const sh = alt ? altRowShading : undefined;
-        const note = cc !== 'NL' ? 'BUITENLANDS' : '';
-        ibanRows.push(new TableRow({ children: [
-          cell(`${COUNTRIES[cc] || cc}`, COL3[0], { shading: sh }),
-          cell(iban, COL3[1], { shading: sh }),
-          cell(note, COL3[2], { shading: sh, color: note ? "CC0000" : undefined, bold: !!note }),
-        ]}));
-        alt = !alt;
-      });
-    });
-    children.push(new Table({ width: { size: TABLE_WIDTH, type: WidthType.DXA }, columnWidths: COL3, rows: ibanRows }));
-  }
-
-  // ── WHOIS ──
-  if (latestWhois) {
-    children.push(heading("WHOIS Domeinregistratie"));
+  if (paymentProviders.length === 0 && validIbans.length === 0) {
+    children.push(para("Geen gegevens gevonden.", { color: "888888" }));
+  } else {
     children.push(new Table({
       width: { size: TABLE_WIDTH, type: WidthType.DXA }, columnWidths: COL2,
       rows: [
-        infoRow("Registrar", latestWhois.registrar),
-        infoRow("Registrant", latestWhois.registrant_name, altRowShading),
-        infoRow("Organisatie", latestWhois.registrant_organization),
-        infoRow("Land", latestWhois.registrant_country, altRowShading),
-        infoRow("Geregistreerd", latestWhois.registration_date),
-        infoRow("Vervalt", latestWhois.expiration_date, altRowShading),
-        infoRow("Domeinleeftijd", latestWhois.domain_age_days ? `${latestWhois.domain_age_days} dagen` : '—'),
-        infoRow("Privacy beschermd", latestWhois.privacy_protected ? "Ja" : "Nee", altRowShading),
+        infoRow("Betaalmethoden gedetecteerd",
+          paymentProviders.length > 0 ? paymentProviders.join(', ') : 'Niet gedetecteerd'),
       ]
     }));
+
+    children.push(para(""));
+    children.push(para("Bankrekeningen (IBAN):", { bold: true }));
+    if (validIbans.length > 0) {
+      const byCountry = {};
+      validIbans.forEach(iban => { const cc = (iban || '').substring(0,2).toUpperCase(); if (!byCountry[cc]) byCountry[cc] = []; byCountry[cc].push(iban); });
+      const sorted = Object.keys(byCountry).sort((a,b) => a === 'NL' ? -1 : b === 'NL' ? 1 : a.localeCompare(b));
+
+      const ibanRows = [new TableRow({ children: [headerCell("Land", COL3[0]), headerCell("IBAN", COL3[1]), headerCell("Opmerking", COL3[2])] })];
+      let alt = false;
+      sorted.forEach(cc => {
+        byCountry[cc].forEach(iban => {
+          const sh = alt ? altRowShading : undefined;
+          const note = cc !== 'NL' ? 'BUITENLANDS' : '';
+          ibanRows.push(new TableRow({ children: [
+            cell(COUNTRIES[cc] || cc, COL3[0], { shading: sh }),
+            cell(iban, COL3[1], { shading: sh }),
+            cell(note, COL3[2], { shading: sh, color: note ? "CC0000" : undefined, bold: !!note }),
+          ]}));
+          alt = !alt;
+        });
+      });
+      children.push(new Table({ width: { size: TABLE_WIDTH, type: WidthType.DXA }, columnWidths: COL3, rows: ibanRows }));
+    } else {
+      children.push(para("Geen bankrekening (IBAN) gevonden op de website.", { color: "888888" }));
+    }
+  }
+
+  // ── WHOIS ──
+  children.push(heading("WHOIS Domeinregistratie"));
+  if (latestWhois) {
+    children.push(new Table({
+      width: { size: TABLE_WIDTH, type: WidthType.DXA }, columnWidths: COL2,
+      rows: [
+        infoRow("Registrar", latestWhois.registrar || '—'),
+        infoRow("Registrant", latestWhois.registrant_name || '—', altRowShading),
+        infoRow("Organisatie", latestWhois.registrant_organization || '—'),
+        infoRow("Land", latestWhois.registrant_country || '—', altRowShading),
+        infoRow("Geregistreerd", latestWhois.registration_date || '—'),
+        infoRow("Vervalt", latestWhois.expiration_date || '—', altRowShading),
+        infoRow("Bijgewerkt", latestWhois.updated_date || '—'),
+        infoRow("Domeinleeftijd", latestWhois.domain_age_days ? `${latestWhois.domain_age_days} dagen` : '—', altRowShading),
+        infoRow("Privacy beschermd", latestWhois.is_privacy_protected ? "Ja" : (latestWhois.is_privacy_protected === false ? "Nee" : "—")),
+        infoRow("Naamservers", (() => { try { const ns = JSON.parse(latestWhois.name_servers || '[]'); return ns.length ? ns.join(', ') : '—'; } catch { return latestWhois.name_servers || '—'; } })(), altRowShading),
+      ]
+    }));
+  } else {
+    children.push(para("Geen WHOIS-data beschikbaar (lookup mislukt of privacy-beschermd domein).", { color: "888888" }));
   }
 
   // ── SSL ──

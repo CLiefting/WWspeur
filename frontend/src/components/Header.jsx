@@ -31,6 +31,30 @@ export default function Header() {
       </Link>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <Link
+          to="/"
+          style={{
+            fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)',
+            textDecoration: 'none', padding: '6px 14px', borderRadius: 6,
+            border: '1px solid var(--border)', transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => { e.target.style.borderColor = 'var(--gold-dim)'; e.target.style.color = 'var(--gold)'; }}
+          onMouseLeave={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.color = 'var(--text-secondary)'; }}
+        >
+          Dashboard
+        </Link>
+        <Link
+          to="/overview"
+          style={{
+            fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)',
+            textDecoration: 'none', padding: '6px 14px', borderRadius: 6,
+            border: '1px solid var(--border)', transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => { e.target.style.borderColor = 'var(--gold-dim)'; e.target.style.color = 'var(--gold)'; }}
+          onMouseLeave={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.color = 'var(--text-secondary)'; }}
+        >
+          Overzicht
+        </Link>
         <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
           {user?.username}
         </span>

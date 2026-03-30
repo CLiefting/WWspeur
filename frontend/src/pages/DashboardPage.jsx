@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { shops, scans } from '../services/api';
+import { shops } from '../services/api';
+import { useScan } from '../hooks/useScan';
 
 export default function DashboardPage() {
   const [url, setUrl] = useState('kleertjes-sale.com');
@@ -9,20 +10,27 @@ export default function DashboardPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [isAdding, setIsAdding] = useState(false);
-  const [isScanning, setIsScanning] = useState(null); // shop id being scanned
-  const [scanStatus, setScanStatus] = useState('');
   const [error, setError] = useState('');
   const [csvResult, setCsvResult] = useState(null);
   const [maxPages, setMaxPages] = useState(50);
-  const [scanningUrl, setScanningUrl] = useState('');
-  const [currentScanId, setCurrentScanId] = useState(null);
-  const [currentShopId, setCurrentShopId] = useState(null);
-  const abortRef = useRef(false);
-  const [batchScanning, setBatchScanning] = useState(false);
-  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentDomain: '' });
   const [batchWithReports, setBatchWithReports] = useState(true);
+  const [tick, setTick] = useState(0);
   const fileInputRef = useRef(null);
+
+  const fmtTime = (ms) => {
+    if (!ms || ms < 0) return '--:--';
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  };
   const navigate = useNavigate();
+
+  const {
+    isScanning, scanStatus, scanProgress, scanningUrl, currentShopId,
+    batchScanning, batchProgress,
+    startScan, stopScan, restartScan,
+    startBatchScan, stopBatchScan,
+  } = useScan();
 
   const loadShops = async () => {
     try {
@@ -36,42 +44,26 @@ export default function DashboardPage() {
 
   useEffect(() => { loadShops(); }, [page, search]);
 
-  const [scanProgress, setScanProgress] = useState(null);
+  // Reload when page becomes visible (e.g. navigating back)
+  useEffect(() => {
+    const handleFocus = () => loadShops();
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [page, search]);
 
-  const _runScanWithPolling = async (shopId, shopUrl) => {
-    setIsScanning(shopId);
-    setCurrentShopId(shopId);
-    setScanningUrl(shopUrl);
-    setScanStatus('Scan gestart...');
-    setScanProgress(null);
-    abortRef.current = false;
+  // Reload list when a scan finishes while on this page
+  useEffect(() => {
+    if (!isScanning && !batchScanning) {
+      loadShops();
+    }
+  }, [isScanning, batchScanning]);
 
-    const scan = await scans.create(shopId, ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape', 'kvk'], maxPages);
-    setCurrentScanId(scan.id);
-
-    await scans.pollUntilDone(
-      scan.id,
-      (s) => {
-        if (s.status === 'completed') setScanStatus('Scan voltooid!');
-        else if (s.status === 'failed') setScanStatus('Scan mislukt');
-      },
-      (progressData) => {
-        if (progressData.progress && Object.keys(progressData.progress).length > 0) {
-          setScanProgress(progressData.progress);
-          const p = progressData.progress;
-          setScanStatus(
-            `Pagina ${p.pages_crawled || 0}/${p.max_pages || '?'} — ` +
-            `${p.emails_found || 0} emails, ${p.phones_found || 0} tel, ` +
-            `${p.kvk_found || 0} KvK`
-          );
-        }
-      },
-      1500,
-      () => abortRef.current,
-    );
-
-    return shopId;
-  };
+  // Tick elke seconde tijdens batch/scan voor live tijdweergave
+  useEffect(() => {
+    if (!batchScanning && !isScanning) return;
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [batchScanning, isScanning]);
 
   const handleAddAndScan = async () => {
     if (!url.trim()) return;
@@ -82,174 +74,24 @@ export default function DashboardPage() {
       const shop = await shops.create(url);
       const scanUrl = shop.url || url;
       setUrl('');
-
-      const shopId = await _runScanWithPolling(shop.id, scanUrl);
-
-      if (!abortRef.current) {
-        setIsScanning(null);
-        setScanStatus('');
-        setScanProgress(null);
-        await loadShops();
-        navigate(`/shop/${shopId}`);
-      }
+      startScan(shop.id, scanUrl, maxPages).then(() => {
+        navigate(`/shop/${shop.id}`);
+      }).catch(err => setError(err.detail || err.message));
     } catch (err) {
       setError(err.detail || err.message);
-      setIsScanning(null);
-      setScanStatus('');
-      setScanProgress(null);
     } finally {
       setIsAdding(false);
     }
   };
 
-  const handleScanExisting = async (shopId) => {
+  const handleScanExisting = (shopId) => {
     const shop = shopList.find(s => s.id === shopId);
     const shopUrl = shop?.url || shop?.domain || '';
-
-    try {
-      await _runScanWithPolling(shopId, shopUrl);
-      if (!abortRef.current) {
-        await loadShops();
-        navigate(`/shop/${shopId}`);
-      }
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      if (!abortRef.current) {
-        setIsScanning(null);
-        setScanStatus('');
-        setScanProgress(null);
-      }
-    }
+    startScan(shopId, shopUrl, maxPages, () => loadShops()).catch(err => setError(err.message));
   };
 
-  const handleStopScan = () => {
-    abortRef.current = true;
-    setIsScanning(null);
-    setScanStatus('');
-    setScanProgress(null);
-    setScanningUrl('');
-    setCurrentScanId(null);
-    setCurrentShopId(null);
-    setIsAdding(false);
-    loadShops();
-  };
-
-  const handleRestartScan = async () => {
-    const shopId = currentShopId;
-    const shopUrl = scanningUrl;
-    handleStopScan();
-    if (shopId) {
-      setTimeout(() => handleScanExisting(shopId), 100);
-    }
-  };
-
-  const handleBatchScan = async () => {
-    if (batchScanning) return;
-    setBatchScanning(true);
-    abortRef.current = false;
-
-    try {
-      // Load ALL shops (not just current page)
-      let allShops = [];
-      let pg = 1;
-      while (true) {
-        const data = await shops.list(pg, 100, '');
-        allShops = [...allShops, ...data.shops];
-        if (allShops.length >= data.total) break;
-        pg++;
-      }
-
-      setBatchProgress({ current: 0, total: allShops.length, currentDomain: '', shopProgress: null, completedShops: [] });
-      const scannedShopIds = [];
-
-      for (let i = 0; i < allShops.length; i++) {
-        if (abortRef.current) break;
-
-        const shop = allShops[i];
-        setBatchProgress(p => ({
-          ...p, current: i + 1, currentDomain: shop.domain, shopProgress: null,
-        }));
-
-        try {
-          const scan = await scans.create(shop.id, ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape', 'kvk'], maxPages);
-
-          // Poll until done WITH progress updates
-          await scans.pollUntilDone(
-            scan.id,
-            () => {},
-            (progressData) => {
-              if (progressData.progress && Object.keys(progressData.progress).length > 0) {
-                setBatchProgress(p => ({ ...p, shopProgress: progressData.progress }));
-              }
-            },
-            1500,
-            () => abortRef.current,
-          );
-
-          if (!abortRef.current) {
-            scannedShopIds.push(shop.id);
-            setBatchProgress(p => ({
-              ...p,
-              completedShops: [...(p.completedShops || []), { domain: shop.domain, status: 'ok' }],
-              shopProgress: null,
-            }));
-            loadShops(); // Update list to show scan status
-          }
-        } catch (err) {
-          console.error('Scan failed for', shop.domain, err);
-          setBatchProgress(p => ({
-            ...p,
-            completedShops: [...(p.completedShops || []), { domain: shop.domain, status: 'error' }],
-          }));
-        }
-      }
-
-      // Download batch reports if enabled
-      if (batchWithReports && scannedShopIds.length > 0 && !abortRef.current) {
-        setBatchProgress(p => ({ ...p, currentDomain: 'Rapporten genereren...' }));
-
-        try {
-          const token = localStorage.getItem('wwspeur_token');
-          const response = await fetch('/api/v1/shops/batch-reports', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(scannedShopIds),
-          });
-
-          if (response.ok) {
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            const contentDisp = response.headers.get('content-disposition');
-            const match = contentDisp?.match(/filename="?([^"]+)"?/);
-            a.download = match ? match[1] : 'wwspeur_rapporten.zip';
-            a.click();
-            window.URL.revokeObjectURL(url);
-          }
-        } catch (err) {
-          console.error('Batch reports failed', err);
-        }
-      }
-
-      await loadShops();
-
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBatchScanning(false);
-      setBatchProgress({ current: 0, total: 0, currentDomain: '' });
-    }
-  };
-
-  const handleStopBatch = () => {
-    abortRef.current = true;
-    setBatchScanning(false);
-    setBatchProgress({ current: 0, total: 0, currentDomain: '' });
+  const handleBatchScan = () => {
+    startBatchScan(maxPages, batchWithReports, () => loadShops());
   };
 
   const handleCSVImport = async (e) => {
@@ -265,7 +107,6 @@ export default function DashboardPage() {
     } catch (err) {
       setError(err.detail || err.message);
     }
-    // Reset file input
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -299,7 +140,7 @@ export default function DashboardPage() {
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto', padding: '40px 24px' }}>
-      
+
       {/* URL Input */}
       <div style={{ marginBottom: 40 }}>
         <div style={{
@@ -384,9 +225,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Max pages slider */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 14, marginTop: 12,
-        }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 12 }}>
           <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
             Max pagina's
           </span>
@@ -425,7 +264,7 @@ export default function DashboardPage() {
           </button>
           {batchScanning && (
             <button
-              onClick={handleStopBatch}
+              onClick={stopBatchScan}
               style={{
                 background: 'transparent', border: '1px solid var(--danger)',
                 color: 'var(--danger)', fontSize: 12, fontWeight: 500,
@@ -453,7 +292,6 @@ export default function DashboardPage() {
           background: 'var(--bg-card)', border: '1px solid var(--gold-dim)',
           borderRadius: 10, padding: '16px 20px', marginBottom: 24,
         }}>
-          {/* Overall progress header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <div style={{ fontSize: 13, color: 'var(--gold-light)', fontWeight: 500 }}>
               Batch scan: {batchProgress.current} / {batchProgress.total}
@@ -469,8 +307,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Overall progress bar */}
-          <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', marginBottom: 14 }}>
+          <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', marginBottom: 8 }}>
             <div style={{
               height: '100%',
               width: `${batchProgress.total > 0 ? (batchProgress.current / batchProgress.total) * 100 : 0}%`,
@@ -479,7 +316,34 @@ export default function DashboardPage() {
             }} />
           </div>
 
-          {/* Current shop scan progress */}
+          {/* Tijdweergave batch */}
+          {(() => {
+            const now = Date.now();
+            const batchElapsed = batchProgress.batchStartedAt ? now - batchProgress.batchStartedAt : 0;
+            const shopElapsed = batchProgress.shopStartedAt ? now - batchProgress.shopStartedAt : 0;
+            const completed = batchProgress.completedShops?.length || 0;
+            // Gemiddelde per shop: gebruik voltooide shops, of huidige elapsed als schatting
+            const avgMs = completed > 0 ? batchElapsed / completed : shopElapsed;
+            // Resterend = shops na huidige + rest van huidige shop
+            const shopsAfter = Math.max(0, batchProgress.total - batchProgress.current);
+            const eta = avgMs > 0 ? (avgMs * shopsAfter) + Math.max(0, avgMs - shopElapsed) : null;
+            return (
+              <div style={{ display: 'flex', gap: 20, marginBottom: 12, fontSize: 11, fontFamily: 'var(--font-mono)' }}>
+                <span style={{ color: 'var(--text-muted)' }}>
+                  Deze shop: <span style={{ color: 'var(--gold-light)' }}>{fmtTime(shopElapsed)}</span>
+                </span>
+                <span style={{ color: 'var(--text-muted)' }}>
+                  Totaal verstreken: <span style={{ color: 'var(--gold-light)' }}>{fmtTime(batchElapsed)}</span>
+                </span>
+                <span style={{ color: 'var(--text-muted)' }}>
+                  Nog ca: <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
+                    {eta !== null ? fmtTime(eta) : '--:--'}
+                  </span>
+                </span>
+              </div>
+            );
+          })()}
+
           {batchProgress.shopProgress && (
             <div style={{
               background: 'rgba(255,255,255,0.03)', borderRadius: 8,
@@ -488,8 +352,6 @@ export default function DashboardPage() {
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
                 Huidige scan: {batchProgress.currentDomain}
               </div>
-
-              {/* Per-shop progress bar */}
               <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', marginBottom: 8 }}>
                 <div style={{
                   height: '100%',
@@ -497,8 +359,6 @@ export default function DashboardPage() {
                   background: 'var(--gold-dim)', borderRadius: 2, transition: 'width 0.5s ease',
                 }} />
               </div>
-
-              {/* Stats */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
                 {[
                   { label: "Pagina's", value: batchProgress.shopProgress.pages_crawled || 0 },
@@ -515,7 +375,6 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Completed shops list */}
           {batchProgress.completedShops?.length > 0 && (
             <div style={{ maxHeight: 120, overflowY: 'auto' }}>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Afgerond:</div>
@@ -542,28 +401,22 @@ export default function DashboardPage() {
           borderRadius: 10, padding: '18px 22px',
           marginBottom: 24,
         }}>
-          {/* URL being scanned + controls */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
             <div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
                 Onderzoekt
               </div>
-              <div style={{
-                fontFamily: 'var(--font-mono)', fontSize: 16, color: 'var(--gold)',
-              }}>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 16, color: 'var(--gold)' }}>
                 {scanningUrl}
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button
-                onClick={handleStopScan}
+                onClick={stopScan}
                 style={{
-                  background: 'transparent',
-                  border: '1px solid var(--danger)',
-                  color: 'var(--danger)',
-                  fontSize: 12, fontWeight: 500,
-                  padding: '6px 14px', borderRadius: 6,
-                  transition: 'all 0.2s',
+                  background: 'transparent', border: '1px solid var(--danger)',
+                  color: 'var(--danger)', fontSize: 12, fontWeight: 500,
+                  padding: '6px 14px', borderRadius: 6, transition: 'all 0.2s',
                 }}
                 onMouseEnter={e => { e.target.style.background = 'rgba(248,113,113,0.15)'; }}
                 onMouseLeave={e => { e.target.style.background = 'transparent'; }}
@@ -571,14 +424,11 @@ export default function DashboardPage() {
                 Stop
               </button>
               <button
-                onClick={handleRestartScan}
+                onClick={restartScan}
                 style={{
-                  background: 'transparent',
-                  border: '1px solid var(--gold-dim)',
-                  color: 'var(--gold)',
-                  fontSize: 12, fontWeight: 500,
-                  padding: '6px 14px', borderRadius: 6,
-                  transition: 'all 0.2s',
+                  background: 'transparent', border: '1px solid var(--gold-dim)',
+                  color: 'var(--gold)', fontSize: 12, fontWeight: 500,
+                  padding: '6px 14px', borderRadius: 6, transition: 'all 0.2s',
                 }}
                 onMouseEnter={e => { e.target.style.background = 'var(--gold-glow)'; }}
                 onMouseLeave={e => { e.target.style.background = 'transparent'; }}
@@ -588,12 +438,9 @@ export default function DashboardPage() {
               <button
                 onClick={() => currentShopId && navigate(`/shop/${currentShopId}`)}
                 style={{
-                  background: 'transparent',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text-secondary)',
-                  fontSize: 12, fontWeight: 500,
-                  padding: '6px 14px', borderRadius: 6,
-                  transition: 'all 0.2s',
+                  background: 'transparent', border: '1px solid var(--border)',
+                  color: 'var(--text-secondary)', fontSize: 12, fontWeight: 500,
+                  padding: '6px 14px', borderRadius: 6, transition: 'all 0.2s',
                 }}
                 onMouseEnter={e => { e.target.style.borderColor = 'var(--gold-dim)'; e.target.style.color = 'var(--gold)'; }}
                 onMouseLeave={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.color = 'var(--text-secondary)'; }}
@@ -603,19 +450,16 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Status line */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <div style={{
-              width: 8, height: 8, borderRadius: '50%',
-              background: 'var(--gold)',
+              width: 8, height: 8, borderRadius: '50%', background: 'var(--gold)',
               animation: 'pulse 1.5s ease-in-out infinite',
             }} />
             <span style={{ fontSize: 13, color: 'var(--gold-light)' }}>{scanStatus}</span>
           </div>
-          
+
           {scanProgress && (
             <>
-              {/* Progress bar */}
               <div style={{
                 height: 4, background: 'var(--border)',
                 borderRadius: 2, overflow: 'hidden', marginBottom: 12,
@@ -624,12 +468,9 @@ export default function DashboardPage() {
                   height: '100%',
                   width: `${Math.min(100, ((scanProgress.pages_crawled || 0) / (scanProgress.max_pages || 200)) * 100)}%`,
                   background: 'linear-gradient(90deg, var(--gold-dim), var(--gold))',
-                  borderRadius: 2,
-                  transition: 'width 0.5s ease',
+                  borderRadius: 2, transition: 'width 0.5s ease',
                 }} />
               </div>
-              
-              {/* Stats grid */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
                 {[
                   { label: "Pagina's", value: scanProgress.pages_crawled || 0 },
@@ -638,30 +479,22 @@ export default function DashboardPage() {
                   { label: 'KvK', value: scanProgress.kvk_found || 0 },
                 ].map(({ label, value }) => (
                   <div key={label} style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--gold)', lineHeight: 1 }}>
-                      {value}
-                    </div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>
-                      {label}
-                    </div>
+                    <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--gold)', lineHeight: 1 }}>{value}</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>{label}</div>
                   </div>
                 ))}
               </div>
-              
-              {/* Current URL being scraped */}
               {scanProgress.current_url && (
                 <div style={{
-                  fontSize: 11, color: 'var(--text-muted)',
-                  fontFamily: 'var(--font-mono)',
-                  marginTop: 10, overflow: 'hidden',
-                  textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)',
+                  marginTop: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>
                   ↳ {scanProgress.current_url}
                 </div>
               )}
             </>
           )}
-          
+
           <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
         </div>
       )}
@@ -701,13 +534,10 @@ export default function DashboardPage() {
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); }}
             style={{
-              background: 'var(--bg-input)',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              color: 'var(--text-primary)',
+              background: 'var(--bg-input)', border: '1px solid var(--border)',
+              borderRadius: 6, color: 'var(--text-primary)',
               fontSize: 12, padding: '6px 12px',
-              outline: 'none', width: 200,
-              fontFamily: 'var(--font-body)',
+              outline: 'none', width: 200, fontFamily: 'var(--font-body)',
             }}
             onFocus={e => e.target.style.borderColor = 'var(--gold-dim)'}
             onBlur={e => e.target.style.borderColor = 'var(--border)'}
@@ -715,10 +545,7 @@ export default function DashboardPage() {
         </div>
 
         {shopList.length === 0 ? (
-          <div style={{
-            textAlign: 'center', padding: '60px 0',
-            color: 'var(--text-muted)', fontSize: 14,
-          }}>
+          <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)', fontSize: 14 }}>
             {search ? 'Geen resultaten gevonden' : 'Nog geen webwinkels toegevoegd'}
           </div>
         ) : (
@@ -727,8 +554,7 @@ export default function DashboardPage() {
               <div
                 key={shop.id}
                 style={{
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border)',
+                  background: 'var(--bg-card)', border: '1px solid var(--border)',
                   borderRadius: 10, padding: '16px 20px',
                   marginBottom: 8, display: 'flex',
                   justifyContent: 'space-between', alignItems: 'center',
@@ -782,16 +608,19 @@ export default function DashboardPage() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {riskBadge(shop.risk_level)}
+                  {shop.risk_score != null && shop.risk_level !== 'unknown' && (
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+                      title="Risicoscore (0=kritiek, 100=veilig)">
+                      {Math.round(shop.risk_score)}/100
+                    </span>
+                  )}
                   <button
                     onClick={(e) => { e.stopPropagation(); handleScanExisting(shop.id); }}
                     disabled={isScanning === shop.id}
                     style={{
-                      background: 'transparent',
-                      border: '1px solid var(--border)',
-                      color: 'var(--text-secondary)',
-                      fontSize: 11, fontWeight: 500,
-                      padding: '4px 12px', borderRadius: 6,
-                      transition: 'all 0.2s',
+                      background: 'transparent', border: '1px solid var(--border)',
+                      color: 'var(--text-secondary)', fontSize: 11, fontWeight: 500,
+                      padding: '4px 12px', borderRadius: 6, transition: 'all 0.2s',
                     }}
                     onMouseEnter={e => { e.target.style.borderColor = 'var(--gold-dim)'; e.target.style.color = 'var(--gold)'; }}
                     onMouseLeave={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.color = 'var(--text-secondary)'; }}
@@ -806,12 +635,9 @@ export default function DashboardPage() {
                       }
                     }}
                     style={{
-                      background: 'transparent',
-                      border: '1px solid var(--border)',
-                      color: 'var(--text-muted)',
-                      fontSize: 11, fontWeight: 500,
-                      padding: '4px 8px', borderRadius: 6,
-                      transition: 'all 0.2s',
+                      background: 'transparent', border: '1px solid var(--border)',
+                      color: 'var(--text-muted)', fontSize: 11, fontWeight: 500,
+                      padding: '4px 8px', borderRadius: 6, transition: 'all 0.2s',
                     }}
                     onMouseEnter={e => { e.target.style.borderColor = 'var(--danger)'; e.target.style.color = 'var(--danger)'; }}
                     onMouseLeave={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.color = 'var(--text-muted)'; }}
@@ -822,11 +648,8 @@ export default function DashboardPage() {
               </div>
             ))}
 
-            {/* Pagination */}
             {totalShops > 20 && (
-              <div style={{
-                display: 'flex', justifyContent: 'center', gap: 8, marginTop: 20,
-              }}>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 20 }}>
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}

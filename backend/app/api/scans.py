@@ -86,12 +86,23 @@ def _run_scan_background(scan_id: int, shop_id: int, collectors: list[str], max_
         scan.started_at = datetime.now(timezone.utc)
         db.commit()
 
-        # Run WHOIS first (fast, ~2 seconds)
+        # Run WHOIS first - with retry because it fails silently in background threads
         if "whois" in collectors:
             try:
-                run_whois_collector(shop=shop, scan=scan, db=db)
+                from app.collectors.whois_lookup import lookup_whois, save_whois_result
+                import time as _time
+                whois_result = None
+                for _attempt in range(3):
+                    whois_result = lookup_whois(shop.url)
+                    logger.info(f"WHOIS attempt {_attempt+1} for {shop.domain}: registrar={whois_result.get('registrar')}, error={whois_result.get('error')}")
+                    if whois_result.get("registrar") or whois_result.get("raw_data"):
+                        break
+                    _time.sleep(2)
+                save_whois_result(whois_result, shop.id, scan.id, db)
+                db.commit()
+                logger.info(f"WHOIS saved for {shop.domain}: {whois_result.get('registrar')}")
             except Exception as e:
-                logger.error(f"WHOIS collector failed: {e}")
+                logger.error(f"WHOIS collector failed: {e}", exc_info=True)
 
         # Run SSL check (fast, ~2 seconds)
         if "ssl" in collectors:

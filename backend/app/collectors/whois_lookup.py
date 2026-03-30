@@ -11,6 +11,7 @@ Fetches domain registration data:
 """
 import json
 import logging
+import re
 from datetime import datetime, timezone, date
 from typing import Optional
 from urllib.parse import urlparse
@@ -95,6 +96,67 @@ def _detect_privacy(whois_data) -> bool:
     return False
 
 
+def _parse_raw_whois(raw: str) -> dict:
+    """
+    Fallback parser: extract key fields from raw WHOIS text using regex.
+    Covers common formats including SIDN (.nl), DENIC (.de), Nominet (.uk), etc.
+    """
+    extracted = {}
+
+    # Registrar — many formats
+    for pattern in [
+        r"(?i)^registrar\s*:\s*(.+)$",
+        r"(?i)^registrar name\s*:\s*(.+)$",
+        r"(?i)^sponsoring registrar\s*:\s*(.+)$",
+        r"(?i)^registration service provider\s*:\s*(.+)$",
+    ]:
+        m = re.search(pattern, raw, re.MULTILINE)
+        if m:
+            extracted["registrar"] = m.group(1).strip()
+            break
+
+    # Creation / registration date
+    for pattern in [
+        r"(?i)^creation date\s*:\s*(.+)$",
+        r"(?i)^created\s*:\s*(.+)$",
+        r"(?i)^created date\s*:\s*(.+)$",
+        r"(?i)^registered\s*:\s*(.+)$",
+        r"(?i)^registration time\s*:\s*(.+)$",
+        r"(?i)^domain registered\s*:\s*(.+)$",
+        r"(?i)^created on\s*:\s*(.+)$",
+    ]:
+        m = re.search(pattern, raw, re.MULTILINE)
+        if m:
+            extracted["creation_date"] = m.group(1).strip()
+            break
+
+    # Expiration date
+    for pattern in [
+        r"(?i)^expir(?:y|ation|es) date\s*:\s*(.+)$",
+        r"(?i)^registry expiry date\s*:\s*(.+)$",
+        r"(?i)^paid-till\s*:\s*(.+)$",
+        r"(?i)^expiry\s*:\s*(.+)$",
+        r"(?i)^expire date\s*:\s*(.+)$",
+        r"(?i)^domain expiration\s*:\s*(.+)$",
+    ]:
+        m = re.search(pattern, raw, re.MULTILINE)
+        if m:
+            extracted["expiration_date"] = m.group(1).strip()
+            break
+
+    # Country
+    for pattern in [
+        r"(?i)^registrant country\s*:\s*(.+)$",
+        r"(?i)^country\s*:\s*(.+)$",
+    ]:
+        m = re.search(pattern, raw, re.MULTILINE)
+        if m:
+            extracted["country"] = m.group(1).strip()
+            break
+
+    return extracted
+
+
 def lookup_whois(url: str) -> dict:
     """
     Perform a WHOIS lookup for the domain in the given URL.
@@ -121,40 +183,71 @@ def lookup_whois(url: str) -> dict:
     }
     
     try:
-        import signal
+        import concurrent.futures
 
-        def _timeout_handler(signum, frame):
-            raise TimeoutError("WHOIS timeout")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _executor:
+            _future = _executor.submit(whois.whois, domain)
+            try:
+                w = _future.result(timeout=15)
+            except concurrent.futures.TimeoutError:
+                raise TimeoutError("WHOIS timeout")
 
-        signal.signal(signal.SIGALRM, _timeout_handler)
-        signal.alarm(15)
-        try:
-            w = whois.whois(domain)
-        finally:
-            signal.alarm(0)
+        if w is None:
+            result["error"] = "Geen WHOIS data gevonden"
+            return result
 
-        if w is None or (hasattr(w, 'status') and w.status is None):
+        # Check if the response has any useful data at all
+        has_data = any([
+            getattr(w, 'domain_name', None),
+            getattr(w, 'registrar', None),
+            getattr(w, 'creation_date', None),
+            getattr(w, 'expiration_date', None),
+            getattr(w, 'text', None),
+        ])
+        if not has_data:
             result["error"] = "Geen WHOIS data gevonden"
             return result
         
+        # Raw data first (needed for fallback)
+        try:
+            raw_text = w.text if hasattr(w, 'text') else str(w)
+            result["raw_data"] = raw_text[:10_000] if raw_text else None
+        except Exception:
+            raw_text = None
+            result["raw_data"] = None
+
         # Registrar
         result["registrar"] = _to_str(getattr(w, 'registrar', None))
-        
+
         # Registrant info
         result["registrant_name"] = _to_str(getattr(w, 'name', None))
         result["registrant_organization"] = _to_str(getattr(w, 'org', None))
         result["registrant_country"] = _to_str(getattr(w, 'country', None))
-        
+
         # Dates
         result["registration_date"] = _to_date(getattr(w, 'creation_date', None))
         result["expiration_date"] = _to_date(getattr(w, 'expiration_date', None))
         result["updated_date"] = _to_date(getattr(w, 'updated_date', None))
-        
+
+        # Fallback: parse raw text when python-whois failed to extract fields
+        missing = not result["registrar"] or not result["registration_date"]
+        if missing and raw_text:
+            fb = _parse_raw_whois(raw_text)
+            logger.info(f"WHOIS fallback voor {domain}: {fb}")
+            if not result["registrar"] and fb.get("registrar"):
+                result["registrar"] = fb["registrar"]
+            if not result["registration_date"] and fb.get("creation_date"):
+                result["registration_date"] = _to_date(fb["creation_date"])
+            if not result["expiration_date"] and fb.get("expiration_date"):
+                result["expiration_date"] = _to_date(fb["expiration_date"])
+            if not result["registrant_country"] and fb.get("country"):
+                result["registrant_country"] = fb["country"]
+
         # Domain age
         if result["registration_date"]:
             today = datetime.now(timezone.utc).date()
             result["domain_age_days"] = (today - result["registration_date"]).days
-        
+
         # Name servers
         ns = getattr(w, 'name_servers', None)
         if ns:
@@ -162,17 +255,10 @@ def lookup_whois(url: str) -> dict:
                 result["name_servers"] = list(dict.fromkeys(str(n).lower() for n in ns if n))
             else:
                 result["name_servers"] = [str(ns).lower()]
-        
+
         # Privacy detection
         result["is_privacy_protected"] = _detect_privacy(w)
-        
-        # Raw data for debugging (afgekapt op 10.000 tekens)
-        try:
-            raw = w.text if hasattr(w, 'text') else str(w)
-            result["raw_data"] = raw[:10_000] if raw else None
-        except Exception:
-            result["raw_data"] = None
-        
+
         logger.info(
             f"WHOIS voltooid voor {domain}: "
             f"registrar={result['registrar']}, "
@@ -203,9 +289,9 @@ def save_whois_result(
     """Save WHOIS result to the database. Skips if no useful data."""
     from app.models.collectors import WhoisRecord
     
-    # Skip saving if no useful data found (prevents empty records)
-    if not result.get("registrar") and not result.get("registration_date") and not result.get("raw_data"):
-        logger.warning("WHOIS result is empty for shop %s, skipping save", shop_id)
+    # Skip saving only if truly nothing was returned (no data, no error, no raw_data)
+    if not result.get("registrar") and not result.get("registration_date") and not result.get("raw_data") and not result.get("error"):
+        logger.warning("WHOIS result is completely empty for shop %s, skipping save", shop_id)
         return None
     
     now = datetime.now(timezone.utc)
