@@ -293,6 +293,98 @@ def _extract_iban(text):
     return {match.group().replace(" ", "") for match in IBAN_PATTERN.finditer(text)}
 
 
+def _extract_structured_data(soup) -> dict:
+    """
+    Extraheer gegevens uit JSON-LD structured data en relevante meta-tags.
+    Geeft een dict terug met emails, phones, kvk_numbers, btw_numbers,
+    iban_numbers en addresses (allemaal sets).
+    """
+    result = {
+        "emails": set(), "phones": set(), "kvk_numbers": set(),
+        "btw_numbers": set(), "iban_numbers": set(), "addresses": set(),
+    }
+
+    # JSON-LD blokken
+    for tag in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(tag.string or "")
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        # Verwerk zowel enkel object als @graph array
+        items = data if isinstance(data, list) else data.get("@graph", [data])
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            # Email
+            for field in ("email", "contactEmail"):
+                val = item.get(field, "")
+                if val and "@" in str(val):
+                    result["emails"].add(str(val).lower().strip())
+
+            # Telefoon
+            for field in ("telephone", "faxNumber", "contactTelephone"):
+                val = item.get(field, "")
+                if val:
+                    for phone in _extract_phones(str(val)):
+                        result["phones"].add(phone)
+
+            # BTW / KvK via taxID / vatID
+            for field in ("taxID", "vatID", "leiCode"):
+                val = str(item.get(field, "")).strip()
+                if not val:
+                    continue
+                for btw in _extract_btw(val):
+                    result["btw_numbers"].add(btw)
+                for kvk in _extract_kvk(val):
+                    result["kvk_numbers"].add(kvk)
+                # KvK als puur 8-cijferig getal
+                if re.fullmatch(r"\d{8}", val) and val[0] != "0":
+                    result["kvk_numbers"].add(val)
+
+            # Adres uit PostalAddress
+            addr_obj = item.get("address", {})
+            if isinstance(addr_obj, dict):
+                street = addr_obj.get("streetAddress", "")
+                postal = addr_obj.get("postalCode", "")
+                city = addr_obj.get("addressLocality", "")
+                parts = [p for p in [street, postal, city] if p]
+                if len(parts) >= 2:
+                    result["addresses"].add(" ".join(parts))
+
+            # Scan volledige tekst van het item op KvK/BTW/IBAN
+            raw = json.dumps(item)
+            for kvk in _extract_kvk(raw):
+                result["kvk_numbers"].add(kvk)
+            for btw in _extract_btw(raw):
+                result["btw_numbers"].add(btw)
+            for iban in _extract_iban(raw):
+                result["iban_numbers"].add(iban)
+
+    # Meta-tags (og, business, verificatie)
+    for meta in soup.find_all("meta"):
+        name = (meta.get("name") or meta.get("property") or "").lower()
+        content = (meta.get("content") or "").strip()
+        if not content:
+            continue
+        if "email" in name and "@" in content:
+            result["emails"].add(content.lower())
+        if any(k in name for k in ("phone", "telefoon", "tel")):
+            for phone in _extract_phones(content):
+                result["phones"].add(phone)
+        if any(k in name for k in ("kvk", "coc", "chamber")):
+            for kvk in _extract_kvk(content):
+                result["kvk_numbers"].add(kvk)
+            if re.fullmatch(r"\d{8}", content) and content[0] != "0":
+                result["kvk_numbers"].add(content)
+        if any(k in name for k in ("vat", "btw", "tax")):
+            for btw in _extract_btw(content):
+                result["btw_numbers"].add(btw)
+
+    return result
+
+
 def _extract_addresses(text):
     addresses = set()
     for match in ADDRESS_PATTERN.finditer(text):
@@ -325,6 +417,10 @@ def scrape_page(url, session):
         html = response.text
         page.html_hash = hashlib.sha256(html.encode()).hexdigest()
         soup = BeautifulSoup(html, "lxml")
+
+        # Structured data VOOR het verwijderen van script-tags
+        structured = _extract_structured_data(soup)
+
         for tag in soup(["script", "style", "noscript"]):
             tag.decompose()
 
@@ -335,12 +431,12 @@ def scrape_page(url, session):
             page.meta_description = meta_desc.get("content", "")
 
         visible_text = soup.get_text(separator=" ", strip=True)
-        page.emails = _extract_emails(visible_text, html)
-        page.phones = _extract_phones(visible_text)
-        page.kvk_numbers = _extract_kvk(visible_text)
-        page.btw_numbers = _extract_btw(visible_text)
-        page.iban_numbers = _extract_iban(visible_text)
-        page.addresses = _extract_addresses(visible_text)
+        page.emails = _extract_emails(visible_text, html) | structured["emails"]
+        page.phones = _extract_phones(visible_text) | structured["phones"]
+        page.kvk_numbers = _extract_kvk(visible_text) | structured["kvk_numbers"]
+        page.btw_numbers = _extract_btw(visible_text) | structured["btw_numbers"]
+        page.iban_numbers = _extract_iban(visible_text) | structured["iban_numbers"]
+        page.addresses = _extract_addresses(visible_text) | structured["addresses"]
         page.emails |= _extract_emails("", html)
 
         base_domain = urlparse(url).netloc.lower().lstrip("www.")
