@@ -12,6 +12,7 @@ export default function DashboardPage() {
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState('');
   const [csvResult, setCsvResult] = useState(null);
+  const [csvLoading, setCsvLoading] = useState(false);
   const [maxPages, setMaxPages] = useState(50);
   const [batchWithReports, setBatchWithReports] = useState(true);
   const [tick, setTick] = useState(0);
@@ -99,6 +100,7 @@ export default function DashboardPage() {
     if (!file) return;
     setCsvResult(null);
     setError('');
+    setCsvLoading(true);
 
     try {
       const result = await shops.importCSV(file);
@@ -106,8 +108,10 @@ export default function DashboardPage() {
       await loadShops();
     } catch (err) {
       setError(err.detail || err.message);
+    } finally {
+      setCsvLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleKeyDown = (e) => {
@@ -202,26 +206,40 @@ export default function DashboardPage() {
             style={{ display: 'none' }}
           />
           <button
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => !csvLoading && fileInputRef.current?.click()}
+            disabled={csvLoading}
             style={{
               background: 'transparent',
-              border: '1px solid var(--border)',
-              color: 'var(--text-secondary)',
+              border: `1px solid ${csvLoading ? 'var(--gold-dim)' : 'var(--border)'}`,
+              color: csvLoading ? 'var(--gold)' : 'var(--text-secondary)',
               fontSize: 12, fontWeight: 500,
               padding: '6px 14px', borderRadius: 6,
-              transition: 'all 0.2s',
+              transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 6,
             }}
-            onMouseEnter={e => { e.target.style.borderColor = 'var(--gold-dim)'; e.target.style.color = 'var(--gold)'; }}
-            onMouseLeave={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.color = 'var(--text-secondary)'; }}
+            onMouseEnter={e => { if (!csvLoading) { e.currentTarget.style.borderColor = 'var(--gold-dim)'; e.currentTarget.style.color = 'var(--gold)'; }}}
+            onMouseLeave={e => { if (!csvLoading) { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}}
           >
-            CSV importeren
+            {csvLoading && (
+              <span style={{
+                width: 10, height: 10, borderRadius: '50%',
+                border: '2px solid var(--gold-dim)', borderTopColor: 'var(--gold)',
+                display: 'inline-block', animation: 'spin 0.7s linear infinite',
+              }} />
+            )}
+            {csvLoading ? 'Importeren...' : 'CSV importeren'}
           </button>
-          {csvResult && (
+          {csvLoading && (
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              CSV verwerken...
+            </span>
+          )}
+          {!csvLoading && csvResult && (
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
               {csvResult.added} toegevoegd, {csvResult.skipped} overgeslagen
               {csvResult.errors > 0 && `, ${csvResult.errors} fouten`}
             </span>
           )}
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
 
         {/* Max pages slider */}
