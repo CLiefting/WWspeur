@@ -10,6 +10,7 @@ export function ScanProvider({ children }) {
   const [scanningUrl, setScanningUrl] = useState('');
   const [currentScanId, setCurrentScanId] = useState(null);
   const [currentShopId, setCurrentShopId] = useState(null);
+  const [scanStartedAt, setScanStartedAt] = useState(null);
 
   const [batchScanning, setBatchScanning] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentDomain: '', shopProgress: null, completedShops: [] });
@@ -28,6 +29,7 @@ export function ScanProvider({ children }) {
     setScanningUrl(shopUrl);
     setScanStatus('Scan gestart...');
     setScanProgress(null);
+    setScanStartedAt(Date.now());
     abortRef.current = false;
     lastScanRef.current = { shopId, shopUrl, maxPages };
 
@@ -75,6 +77,7 @@ export function ScanProvider({ children }) {
     setScanningUrl('');
     setCurrentScanId(null);
     setCurrentShopId(null);
+    setScanStartedAt(null);
   };
 
   const restartScan = () => {
@@ -262,6 +265,7 @@ export function ScanProvider({ children }) {
   return (
     <ScanContext.Provider value={{
       isScanning, scanStatus, scanProgress, scanningUrl, currentScanId, currentShopId,
+      scanStartedAt,
       batchScanning, batchProgress, scanQueue,
       startScan, stopScan, restartScan,
       startBatchScan, stopBatchScan, queueScans,

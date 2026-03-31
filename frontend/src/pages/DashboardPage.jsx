@@ -31,6 +31,7 @@ export default function DashboardPage() {
 
   const {
     isScanning, scanStatus, scanProgress, scanningUrl, currentShopId,
+    scanStartedAt,
     batchScanning, batchProgress,
     startScan, stopScan, restartScan,
     startBatchScan, stopBatchScan,
@@ -471,6 +472,30 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* Tijdindicatie */}
+          {(() => {
+            const now = Date.now();
+            const elapsed = scanStartedAt ? now - scanStartedAt : 0;
+            const pagesTotal = scanProgress?.max_pages || maxPages || 50;
+            const pagesDone = scanProgress?.pages_crawled || 0;
+            const avgMsPerPage = pagesDone > 0 && elapsed > 0 ? elapsed / pagesDone : null;
+            const pagesLeft = Math.max(0, pagesTotal - pagesDone);
+            const eta = avgMsPerPage && pagesLeft > 0 ? avgMsPerPage * pagesLeft : null;
+            if (!elapsed) return null;
+            return (
+              <div style={{ display: 'flex', gap: 20, marginBottom: 10, fontSize: 11, fontFamily: 'var(--font-mono)' }}>
+                <span style={{ color: 'var(--text-muted)' }}>
+                  Verstreken: <span style={{ color: 'var(--gold-light)' }}>{fmtTime(elapsed)}</span>
+                </span>
+                {eta !== null && (
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    Nog ca: <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmtTime(eta)}</span>
+                  </span>
+                )}
+              </div>
+            );
+          })()}
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <div style={{
               width: 8, height: 8, borderRadius: '50%', background: 'var(--gold)',
@@ -492,12 +517,13 @@ export default function DashboardPage() {
                   borderRadius: 2, transition: 'width 0.5s ease',
                 }} />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10 }}>
                 {[
                   { label: "Pagina's", value: scanProgress.pages_crawled || 0 },
                   { label: 'E-mails', value: scanProgress.emails_found || 0 },
                   { label: 'Telefoon', value: scanProgress.phones_found || 0 },
                   { label: 'KvK', value: scanProgress.kvk_found || 0 },
+                  { label: 'Bewijs', value: (scanProgress.emails_found || 0) + (scanProgress.phones_found || 0) + (scanProgress.addresses_found || 0) + (scanProgress.kvk_found || 0) },
                 ].map(({ label, value }) => (
                   <div key={label} style={{ textAlign: 'center' }}>
                     <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--gold)', lineHeight: 1 }}>{value}</div>
