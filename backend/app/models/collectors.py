@@ -107,7 +107,16 @@ class ScrapeRecord(Base, TimestampMixin):
     has_privacy_page = Column(Boolean, nullable=True)
     has_contact_page = Column(Boolean, nullable=True)
     has_return_policy = Column(Boolean, nullable=True)
-    
+
+    # Checklist checks
+    is_opening_soon = Column(Boolean, nullable=True)
+    is_maintenance = Column(Boolean, nullable=True)
+    detected_languages = Column(Text, nullable=True)    # JSON list, e.g. ["nl","en"]
+    has_delivery_time = Column(Boolean, nullable=True)
+    has_preorder = Column(Boolean, nullable=True)
+    has_whatsapp_contact = Column(Boolean, nullable=True)
+    has_suspicious_prices = Column(Boolean, nullable=True)
+
     # Technical details
     http_status_code = Column(Integer, nullable=True)
     redirect_chain = Column(Text, nullable=True)      # JSON list
@@ -329,3 +338,22 @@ class ScamCheckRecord(Base, TimestampMixin):
 
     def __repr__(self):
         return f"<ScamCheckRecord(id={self.id}, shop_id={self.shop_id}, flagged={self.flagged})>"
+
+
+class StatusCheckRecord(Base, TimestampMixin):
+    """Website availability check — is the site online or offline?"""
+    __tablename__ = "status_check_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id"), nullable=False, index=True)
+
+    is_online = Column(Boolean, nullable=False)
+    http_status_code = Column(Integer, nullable=True)
+    response_time_ms = Column(Integer, nullable=True)
+    error_message = Column(String(500), nullable=True)
+    checked_at = Column(DateTime, nullable=False)
+
+    shop = relationship("Shop", back_populates="status_check_records")
+
+    def __repr__(self):
+        return f"<StatusCheckRecord(id={self.id}, shop_id={self.shop_id}, is_online={self.is_online})>"

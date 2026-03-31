@@ -112,6 +112,28 @@ async function generateReport(shop) {
     ]
   }));
 
+  // ── Vragenlijst ──
+  children.push(heading("Vragenlijst"));
+  const langNames = { nl:'Nederlands', en:'Engels', de:'Duits', fr:'Frans', es:'Spaans', it:'Italiaans', pt:'Portugees', pl:'Pools', zh:'Chinees' };
+  const detectedLangs = (() => {
+    try {
+      const l = JSON.parse(latestScrape?.detected_languages || '[]');
+      return l.length ? l.map(c => langNames[c] || c.toUpperCase()).join(', ') : '—';
+    } catch { return '—'; }
+  })();
+  children.push(new Table({
+    width: { size: TABLE_WIDTH, type: WidthType.DXA }, columnWidths: COL2,
+    rows: [
+      infoRow("Binnenkort geopend?",       latestScrape?.is_opening_soon     ? "Ja" : "Nee"),
+      infoRow("In onderhoud?",              latestScrape?.is_maintenance      ? "Ja" : "Nee", altRowShading),
+      infoRow("Talen op de website",        detectedLangs),
+      infoRow("Levertijd vermeld?",         latestScrape?.has_delivery_time   ? "Ja" : "Nee", altRowShading),
+      infoRow("Pre-orders mogelijk?",       latestScrape?.has_preorder        ? "Ja" : "Nee"),
+      infoRow("Contact via WhatsApp?",      latestScrape?.has_whatsapp_contact? "Ja" : "Nee", altRowShading),
+      infoRow("Verdacht lage prijzen?",     latestScrape?.has_suspicious_prices ? "Ja" : "Nee"),
+    ]
+  }));
+
   // ── Bedrijfsgegevens ──
   children.push(heading("Bedrijfsgegevens"));
   const kvkVal = latestScrape?.kvk_number_found;

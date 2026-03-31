@@ -96,7 +96,8 @@ export function ScanProvider({ children }) {
     setScanQueue(shopList.map(s => ({ id: s.id, domain: s.domain, url: s.url })));
 
     const scannedShopIds = [];
-    setBatchProgress({ current: 0, total: shopList.length, currentDomain: '', shopProgress: null, completedShops: [] });
+    batchStartRef.current = Date.now();
+    setBatchProgress({ current: 0, total: shopList.length, currentDomain: '', shopProgress: null, completedShops: [], batchStartedAt: Date.now() });
 
     try {
       for (let i = 0; i < shopList.length; i++) {
@@ -106,7 +107,8 @@ export function ScanProvider({ children }) {
 
         // Remove this shop from the queue (it's now active)
         setScanQueue(prev => prev.filter(s => s.id !== shop.id));
-        setBatchProgress(p => ({ ...p, current: i + 1, currentDomain: shop.domain, shopProgress: null }));
+        shopStartRef.current = Date.now();
+        setBatchProgress(p => ({ ...p, current: i + 1, currentDomain: shop.domain, shopProgress: null, shopStartedAt: Date.now() }));
         setIsScanning(shop.id);
         setCurrentShopId(shop.id);
         setScanningUrl(shop.url || shop.domain);

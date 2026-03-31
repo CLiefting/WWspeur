@@ -310,6 +310,13 @@ def list_shops(
                 "privacy": latest_scrape.has_privacy_page or False,
                 "terms": latest_scrape.has_terms_page or False,
                 "returns": latest_scrape.has_return_policy or False,
+                "is_opening_soon": latest_scrape.is_opening_soon,
+                "is_maintenance": latest_scrape.is_maintenance,
+                "has_delivery_time": latest_scrape.has_delivery_time,
+                "has_preorder": latest_scrape.has_preorder,
+                "has_whatsapp_contact": latest_scrape.has_whatsapp_contact,
+                "has_suspicious_prices": latest_scrape.has_suspicious_prices,
+                "detected_languages": json_mod.loads(latest_scrape.detected_languages) if latest_scrape.detected_languages else [],
             }
 
         # Add WHOIS summary
@@ -367,7 +374,7 @@ def list_shops(
             resp.scan_stats["platform"] = latest_tech.ecommerce_platform or latest_tech.cms or None
 
         # Add scam check summary
-        from app.models.collectors import ScamCheckRecord
+        from app.models.collectors import ScamCheckRecord, StatusCheckRecord
         latest_scam = (
             db.query(ScamCheckRecord)
             .filter(ScamCheckRecord.shop_id == shop.id)
@@ -379,6 +386,19 @@ def list_shops(
                 resp.scan_stats = {}
             resp.scan_stats["scam_flagged"] = latest_scam.flagged
             resp.scan_stats["scam_hits"] = latest_scam.total_hits
+
+        # Add latest status check
+        latest_status = (
+            db.query(StatusCheckRecord)
+            .filter(StatusCheckRecord.shop_id == shop.id)
+            .order_by(StatusCheckRecord.checked_at.desc())
+            .first()
+        )
+        if latest_status:
+            if resp.scan_stats is None:
+                resp.scan_stats = {}
+            resp.scan_stats["is_online"] = latest_status.is_online
+            resp.scan_stats["last_status_check"] = latest_status.checked_at.isoformat() if latest_status.checked_at else None
 
         shop_responses.append(resp)
 
@@ -464,6 +484,25 @@ def update_shop(
     return shop
 
 
+@router.delete("/all", status_code=status.HTTP_204_NO_CONTENT)
+def delete_all_shops(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete all shops and all associated scan data."""
+    from app.models.collectors import (
+        WhoisRecord, SSLRecord, ScrapeRecord, DnsHttpRecord,
+        TechRecord, TrustmarkRecord, AdTrackerRecord, KvKRecord, ScamCheckRecord, StatusCheckRecord,
+    )
+    from app.models.scan import Scan
+
+    for model in [StatusCheckRecord, ScamCheckRecord, KvKRecord, AdTrackerRecord, TrustmarkRecord, TechRecord, DnsHttpRecord, ScrapeRecord, WhoisRecord, SSLRecord]:
+        db.query(model).delete()
+    db.query(Scan).delete()
+    db.query(Shop).delete()
+    db.commit()
+
+
 @router.delete("/{shop_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_shop(
     shop_id: int,
@@ -495,14 +534,101 @@ def clear_shop_scans(
 
     from app.models.collectors import (
         WhoisRecord, SSLRecord, ScrapeRecord, DnsHttpRecord,
-        TechRecord, TrustmarkRecord, AdTrackerRecord, KvkRecord, ScamCheckRecord,
+        TechRecord, TrustmarkRecord, AdTrackerRecord, KvKRecord, ScamCheckRecord, StatusCheckRecord,
     )
     from app.models.scan import Scan
 
-    for model in [ScamCheckRecord, KvkRecord, AdTrackerRecord, TrustmarkRecord, TechRecord, DnsHttpRecord, ScrapeRecord, WhoisRecord, SSLRecord]:
+    for model in [StatusCheckRecord, ScamCheckRecord, KvKRecord, AdTrackerRecord, TrustmarkRecord, TechRecord, DnsHttpRecord, ScrapeRecord, WhoisRecord, SSLRecord]:
         db.query(model).filter(model.shop_id == shop_id).delete()
     db.query(Scan).filter(Scan.shop_id == shop_id).delete()
     db.commit()
+
+
+@router.post("/{shop_id}/check-status")
+def check_shop_status(
+    shop_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Check whether a shop's website is currently online or offline."""
+    import time
+    import requests
+    from datetime import datetime, timezone
+    from app.models.collectors import StatusCheckRecord
+
+    shop = db.query(Shop).filter(Shop.id == shop_id).first()
+    if not shop:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webwinkel niet gevonden")
+
+    is_online = False
+    http_status_code = None
+    response_time_ms = None
+    error_message = None
+
+    try:
+        start = time.monotonic()
+        resp = requests.head(shop.url, timeout=10, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0"})
+        response_time_ms = int((time.monotonic() - start) * 1000)
+        http_status_code = resp.status_code
+        is_online = resp.status_code < 500
+    except requests.exceptions.ConnectionError:
+        error_message = "Verbinding geweigerd of host onbereikbaar"
+    except requests.exceptions.Timeout:
+        error_message = "Verzoek verlopen (timeout)"
+    except Exception as e:
+        error_message = str(e)[:500]
+
+    record = StatusCheckRecord(
+        shop_id=shop_id,
+        is_online=is_online,
+        http_status_code=http_status_code,
+        response_time_ms=response_time_ms,
+        error_message=error_message,
+        checked_at=datetime.now(timezone.utc),
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+
+    return {
+        "is_online": is_online,
+        "http_status_code": http_status_code,
+        "response_time_ms": response_time_ms,
+        "error_message": error_message,
+        "checked_at": record.checked_at.isoformat(),
+    }
+
+
+@router.get("/{shop_id}/check-status/history")
+def get_status_history(
+    shop_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the last 20 status checks for a shop."""
+    from app.models.collectors import StatusCheckRecord
+
+    shop = db.query(Shop).filter(Shop.id == shop_id).first()
+    if not shop:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webwinkel niet gevonden")
+
+    records = (
+        db.query(StatusCheckRecord)
+        .filter(StatusCheckRecord.shop_id == shop_id)
+        .order_by(StatusCheckRecord.checked_at.desc())
+        .limit(20)
+        .all()
+    )
+    return [
+        {
+            "is_online": r.is_online,
+            "http_status_code": r.http_status_code,
+            "response_time_ms": r.response_time_ms,
+            "error_message": r.error_message,
+            "checked_at": r.checked_at.isoformat() if r.checked_at else None,
+        }
+        for r in records
+    ]
 
 
 @router.get("/{shop_id}/report")

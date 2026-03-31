@@ -132,6 +132,9 @@ export const shops = {
   },
   async delete(id) { return request('/shops/' + id, { method: 'DELETE' }); },
   async clearScans(id) { return request('/shops/' + id + '/scans', { method: 'DELETE' }); },
+  async deleteAll() { return request('/shops/all', { method: 'DELETE' }); },
+  async checkStatus(id) { return request('/shops/' + id + '/check-status', { method: 'POST' }); },
+  async getStatusHistory(id) { return request('/shops/' + id + '/check-status/history'); },
   async importCSV(file) {
     const formData = new FormData();
     formData.append('file', file);

@@ -4,7 +4,7 @@ import { shops } from '../services/api';
 import { useScan } from '../hooks/useScan';
 
 export default function DashboardPage() {
-  const [url, setUrl] = useState('kleertjes-sale.com');
+  const [url, setUrl] = useState('https://pakjedealsnu.nl/');
   const [shopList, setShopList] = useState([]);
   const [totalShops, setTotalShops] = useState(0);
   const [search, setSearch] = useState('');

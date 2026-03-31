@@ -501,6 +501,58 @@ export default function ShopDetailPage() {
             ))}
           </div>
 
+          {/* Vragenlijst checklist */}
+          {latestScrape && (
+            <div style={{
+              background: 'var(--bg-card)', border: '1px solid var(--border)',
+              borderRadius: 10, padding: '16px 20px', marginBottom: 24,
+              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 24px',
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+                textTransform: 'uppercase', letterSpacing: '0.06em',
+                gridColumn: '1 / -1', marginBottom: 4,
+              }}>
+                Vragenlijst
+              </div>
+              {[
+                { label: 'Binnenkort geopend?', ok: latestScrape.is_opening_soon, warn: true },
+                { label: 'In onderhoud?', ok: latestScrape.is_maintenance, warn: true },
+                { label: 'Levertijd vermeld?', ok: latestScrape.has_delivery_time },
+                { label: 'Pre-orders mogelijk?', ok: latestScrape.has_preorder, neutral: true },
+                { label: 'Contact via WhatsApp?', ok: latestScrape.has_whatsapp_contact, neutral: true },
+                { label: 'Verdacht lage prijzen?', ok: latestScrape.has_suspicious_prices, warn: true },
+              ].map(({ label, ok, warn, neutral }) => {
+                const dotColor = ok == null ? 'var(--border)'
+                  : ok && warn ? 'var(--danger)'
+                  : ok && neutral ? '#4A90D9'
+                  : ok ? 'var(--success)'
+                  : 'var(--border)';
+                return (
+                  <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor, flexShrink: 0, display: 'inline-block' }} />
+                    <span style={{ color: ok ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{label}</span>
+                  </div>
+                );
+              })}
+              {(() => {
+                const langs = latestScrape.detected_languages;
+                const langNames = { nl: 'Nederlands', en: 'Engels', de: 'Duits', fr: 'Frans', es: 'Spaans', it: 'Italiaans', pt: 'Portugees', pl: 'Pools', zh: 'Chinees' };
+                const display = langs && langs.length > 0
+                  ? langs.map(l => langNames[l] || l.toUpperCase()).join(', ')
+                  : null;
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, gridColumn: '1 / -1' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: display ? '#4A90D9' : 'var(--border)', flexShrink: 0, display: 'inline-block' }} />
+                    <span style={{ color: display ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                      Talen: {display || '—'}
+                    </span>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
           {/* Business identifiers */}
           <div style={{
             background: 'var(--bg-card)',

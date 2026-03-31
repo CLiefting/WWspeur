@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { settings as settingsApi } from '../services/api';
+import { settings as settingsApi, shops as shopsApi } from '../services/api';
 
 const SERVICE_LABELS = {
   meta: { label: 'Meta / Facebook', color: '#1877F2' },
@@ -14,6 +14,8 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState({});
   const [saved, setSaved] = useState({});
   const [error, setError] = useState('');
+  const [deletingAll, setDeletingAll] = useState(false);
+  const [deleteAllDone, setDeleteAllDone] = useState(false);
 
   useEffect(() => {
     settingsApi.list()
@@ -58,6 +60,20 @@ export default function SettingsPage() {
     }
   };
 
+  const handleDeleteAll = async () => {
+    if (!window.confirm('Weet je het zeker? Dit verwijdert ALLE webwinkels en bijbehorende scandata. Deze actie kan niet ongedaan worden gemaakt.')) return;
+    setDeletingAll(true);
+    try {
+      await shopsApi.deleteAll();
+      setDeleteAllDone(true);
+      setTimeout(() => setDeleteAllDone(false), 3000);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDeletingAll(false);
+    }
+  };
+
   const grouped = items.reduce((acc, item) => {
     if (!acc[item.service]) acc[item.service] = [];
     acc[item.service].push(item);
@@ -85,6 +101,49 @@ export default function SettingsPage() {
           <button onClick={() => setError('')} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer' }}>×</button>
         </div>
       )}
+
+      <div style={{ marginBottom: 40 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--danger)' }} />
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Databeheer
+          </span>
+        </div>
+        <div style={{
+          background: 'var(--bg-card)', border: '1px solid rgba(248,113,113,0.25)',
+          borderRadius: 10, padding: '18px 20px',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>
+                Alle scans verwijderen
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 520, lineHeight: 1.5 }}>
+                Verwijdert alle webwinkels en bijbehorende scanresultaten permanent. Kan niet ongedaan worden gemaakt.
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 16, flexShrink: 0 }}>
+              {deleteAllDone && (
+                <span style={{ fontSize: 12, color: 'var(--success)' }}>✓ Verwijderd</span>
+              )}
+              <button
+                onClick={handleDeleteAll}
+                disabled={deletingAll}
+                style={{
+                  background: 'transparent', border: '1px solid rgba(248,113,113,0.5)',
+                  color: 'var(--danger)', fontSize: 12, fontWeight: 600,
+                  padding: '7px 16px', borderRadius: 6, cursor: deletingAll ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s', whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={e => { if (!deletingAll) { e.target.style.background = 'rgba(248,113,113,0.1)'; e.target.style.borderColor = 'var(--danger)'; } }}
+                onMouseLeave={e => { e.target.style.background = 'transparent'; e.target.style.borderColor = 'rgba(248,113,113,0.5)'; }}
+              >
+                {deletingAll ? 'Verwijderen...' : 'Alles verwijderen'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {Object.entries(grouped).map(([service, serviceItems]) => {
         const svc = SERVICE_LABELS[service] || { label: service, color: 'var(--gold)' };

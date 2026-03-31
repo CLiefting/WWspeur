@@ -96,6 +96,7 @@ export default function OverviewPage() {
   const [sort, setSort] = useState({ key: null, dir: 'asc' });
   const [colFilters, setColFilters] = useState(EMPTY_FILTERS);
   const [showColFilters, setShowColFilters] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(new Set());
   const navigate = useNavigate();
   const { startBatchScan, batchScanning, batchProgress, queueScans, scanQueue, currentShopId } = useScan();
 
@@ -177,6 +178,40 @@ export default function OverviewPage() {
       .filter(s => f === 'all' ? true : f === 'scanned' ? !!s.last_scanned : !s.last_scanned)
       .map(s => s.id);
     setSelected(new Set(ids));
+  };
+
+  const handleCheckStatus = async (shopId, e) => {
+    e.stopPropagation();
+    setCheckingStatus(prev => new Set(prev).add(shopId));
+    try {
+      const result = await shops.checkStatus(shopId);
+      setAllShops(prev => prev.map(s => s.id === shopId
+        ? { ...s, scan_stats: { ...(s.scan_stats || {}), is_online: result.is_online, last_status_check: result.checked_at } }
+        : s
+      ));
+    } catch (err) {
+      // silently ignore
+    } finally {
+      setCheckingStatus(prev => { const n = new Set(prev); n.delete(shopId); return n; });
+    }
+  };
+
+  const handleBulkCheckStatus = async () => {
+    const ids = [...selected];
+    setBulkStatus(`Status checken...`);
+    let done = 0;
+    for (const id of ids) {
+      try {
+        const result = await shops.checkStatus(id);
+        setAllShops(prev => prev.map(s => s.id === id
+          ? { ...s, scan_stats: { ...(s.scan_stats || {}), is_online: result.is_online, last_status_check: result.checked_at } }
+          : s
+        ));
+      } catch (_) {}
+      done++;
+      setBulkStatus(`Status checken... ${done}/${ids.length}`);
+    }
+    setBulkStatus('');
   };
 
   const handleBulkClear = async () => {
@@ -331,6 +366,10 @@ export default function OverviewPage() {
               <button onClick={handleBulkReport} disabled={!!bulkStatus} title="Rapporten downloaden als ZIP"
                 style={{ background: 'transparent', border: '1px solid var(--gold-dim)', color: 'var(--gold)', fontSize: 12, fontWeight: 500, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', opacity: bulkStatus ? 0.5 : 1 }}>
                 Rapporten
+              </button>
+              <button onClick={handleBulkCheckStatus} disabled={!!bulkStatus}
+                style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 500, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', opacity: bulkStatus ? 0.5 : 1 }}>
+                Check status
               </button>
               <button onClick={handleBulkClear} disabled={!!bulkStatus}
                 style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 500, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', opacity: bulkStatus ? 0.5 : 1 }}>
@@ -543,7 +582,19 @@ export default function OverviewPage() {
                     </div>
                   </td>
                   <td style={{ ...td, fontSize: 10, color: 'var(--text-muted)' }}>
-                    {shop.last_scanned ? new Date(shop.last_scanned).toLocaleDateString('nl-NL') : '—'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      {shop.last_scanned ? new Date(shop.last_scanned).toLocaleDateString('nl-NL') : '—'}
+                      {s.last_status_check != null && (
+                        <span
+                          title={`${s.is_online ? 'Online' : 'Offline'} · gecontroleerd ${new Date(s.last_status_check).toLocaleString('nl-NL')}`}
+                          style={{
+                            display: 'inline-block', width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                            background: s.is_online ? 'var(--success)' : 'var(--danger)',
+                            boxShadow: s.is_online ? '0 0 4px var(--success)' : '0 0 4px var(--danger)',
+                          }}
+                        />
+                      )}
+                    </div>
                   </td>
                   <td style={{ ...td, fontSize: 11, color: 'var(--text-secondary)' }}>{s.platform || '—'}</td>
                   <td style={td}>{ageBadge(s.domain_age)}</td>
@@ -570,6 +621,22 @@ export default function OverviewPage() {
                   </td>
                   <td style={td}>
                     <span style={{ display: 'flex', gap: 4 }}>
+                      <button
+                        title="Check status (online/offline)"
+                        onClick={(e) => handleCheckStatus(shop.id, e)}
+                        disabled={checkingStatus.has(shop.id)}
+                        style={{ background: 'transparent', border: 'none', cursor: checkingStatus.has(shop.id) ? 'not-allowed' : 'pointer', padding: '2px 4px', position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        <span style={{
+                          display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
+                          background: checkingStatus.has(shop.id) ? 'var(--gold)' : '#4A90D9',
+                          transition: 'background 0.2s',
+                        }} />
+                        <span style={{
+                          position: 'absolute', fontSize: 7, fontWeight: 700, color: '#fff',
+                          lineHeight: 1, pointerEvents: 'none',
+                        }}>{checkingStatus.has(shop.id) ? '⟳' : '?'}</span>
+                      </button>
                       <button title="Scanresultaten wissen" onClick={(e) => {
                         e.stopPropagation();
                         if (window.confirm(`Scanresultaten van ${shop.domain} wissen?`)) {

@@ -43,6 +43,89 @@ function urlToPrefix(url, index) {
   return `bewijs_${String(index + 1).padStart(3, '0')}_${safe}`;
 }
 
+/**
+ * Probeer cookie-banner te accepteren via tekst-knoppen en bekende framework-selectors.
+ * Meertalig: NL, EN, DE, FR, ES.
+ */
+async function dismissCookieBanner(page) {
+  try {
+    // Wacht kort zodat JS cookie-scripts kunnen initialiseren
+    await new Promise(r => setTimeout(r, 1500));
+
+    await page.evaluate(() => {
+      const acceptTexts = [
+        // NL
+        'accepteer', 'accepteren', 'akkoord', 'alle cookies accepteren',
+        'alles accepteren', 'alles toestaan', 'toestaan', 'bevestigen',
+        'ik ga akkoord', 'ja, ik accepteer',
+        // EN
+        'accept all', 'accept cookies', 'accept all cookies', 'allow all',
+        'allow cookies', 'agree', 'i agree', 'agree to all', 'ok', 'got it',
+        'confirm', 'continue',
+        // DE
+        'alle akzeptieren', 'zustimmen', 'alle cookies akzeptieren', 'einverstanden',
+        // FR
+        'tout accepter', 'accepter', 'accepter tout', "j'accepte", "d'accord",
+        // ES
+        'aceptar todo', 'aceptar', 'acepto',
+      ];
+
+      // 1. Tekst-gebaseerd zoeken in alle klikbare elementen
+      const candidates = [
+        ...document.querySelectorAll('button, a[role="button"], [type="button"], [type="submit"]'),
+      ];
+      for (const el of candidates) {
+        const text = (el.innerText || el.value || el.getAttribute('aria-label') || '').toLowerCase().trim();
+        if (acceptTexts.some(t => text === t || text.startsWith(t))) {
+          el.click();
+          return;
+        }
+      }
+
+      // 2. Bekende CSS-selectors per framework
+      const selectors = [
+        // Cookiebot
+        '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+        '#CybotCookiebotDialogBodyButtonAccept',
+        // OneTrust
+        '#onetrust-accept-btn-handler',
+        '.onetrust-accept-btn-handler',
+        // CookieYes / CookieLaw
+        '.cky-btn-accept', '#cky-btn-accept',
+        '.cl-gdpr-btn-accept',
+        // Complianz
+        '.cmplz-accept', '#cmplz-accept',
+        // Borlabs Cookie
+        '#borlabs-cookie-btn-accept-all',
+        // Quantcast
+        '.qc-cmp2-summary-buttons button:last-child',
+        // Iubenda
+        '.iubenda-cs-accept-btn',
+        // Didomi
+        '#didomi-notice-agree-button',
+        // Generiek
+        '[data-accept-all]',
+        '[data-cookiebanner="accept_button"]',
+        '.cookie-accept', '#cookie-accept',
+        '.accept-cookies', '#accept-cookies',
+        '.cookie-consent-accept', '.js-accept-cookies',
+        '[class*="cookie"][class*="accept"]',
+        '[id*="cookie"][id*="accept"]',
+      ];
+
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el) { el.click(); return; }
+      }
+    });
+
+    // Wacht even voor de banner verdwijnt (animatie)
+    await new Promise(r => setTimeout(r, 800));
+  } catch (_) {
+    // Geen banner of klik mislukt — gewoon doorgaan
+  }
+}
+
 /** Verzamel alle unieke bronpagina's en wat er per pagina gevonden is. */
 function collectSourcePages(shop) {
   const latestScrape = shop.scrape_records?.[shop.scrape_records.length - 1];
@@ -229,6 +312,7 @@ async function main() {
             waitUntil: 'domcontentloaded',
             timeout: 20000,
           });
+          await dismissCookieBanner(browserPage);
           await browserPage.pdf({
             path: paginaPath,
             format: 'A4',

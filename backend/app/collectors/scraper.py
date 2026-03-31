@@ -111,6 +111,65 @@ SOCIAL_MEDIA_DOMAINS = {
     "pinterest.com": "pinterest", "trustpilot.com": "trustpilot",
 }
 
+# --- Checklist keyword detectie (meertalig) ---
+
+OPENING_SOON_KEYWORDS = [
+    # NL
+    "binnenkort geopend", "binnenkort beschikbaar", "binnenkort online", "binnenkort open",
+    "nog even geduld", "lancering",
+    # EN
+    "coming soon", "opening soon", "launching soon", "under construction", "launch soon",
+    # DE
+    "demnächst", "bald verfügbar", "in kürze",
+    # FR
+    "bientôt", "prochainement", "ouverture prochaine",
+    # ES/PT/IT
+    "próximamente", "em breve", "prossimamente",
+]
+
+MAINTENANCE_KEYWORDS = [
+    # NL
+    "in onderhoud", "tijdelijk offline", "onderhoudswerkzaamheden",
+    "tijdelijk niet beschikbaar", "gepland onderhoud", "wij zijn tijdelijk",
+    # EN
+    "under maintenance", "down for maintenance", "maintenance mode",
+    "temporarily unavailable", "we'll be back", "be back soon", "site is down",
+    # DE
+    "wartungsarbeiten", "wir arbeiten daran", "vorübergehend nicht",
+    # FR
+    "en maintenance", "en cours de maintenance", "temporairement indisponible",
+]
+
+DELIVERY_TIME_KEYWORDS = [
+    # NL
+    "levertijd", "bezorgtijd", "verzendtijd", "werkdag", "werkdagen",
+    "bezorgd binnen", "levert binnen", "verwachte levering", "verzending binnen",
+    # EN
+    "delivery time", "shipping time", "business day", "ships within",
+    "dispatched within", "delivered within", "estimated delivery", "delivery within",
+    # DE
+    "lieferzeit", "werktage", "lieferung innerhalb",
+    # FR
+    "délai de livraison", "jours ouvrables", "livraison sous",
+    # ES
+    "plazo de entrega", "días hábiles",
+]
+
+PREORDER_KEYWORDS = [
+    # NL
+    "voorbestelling", "pre-order", "pre-bestellen", "vooraf bestellen",
+    # EN
+    "pre-order", "preorder", "pre-sale", "presale", "pre order",
+    # DE
+    "vorbestellung", "vorbestellen",
+    # FR
+    "précommande", "pré-commande",
+    # ES
+    "pre-pedido", "preventa",
+]
+
+PRICE_PATTERN = re.compile(r'[€$£]\s*(\d{1,4}(?:[.,]\d{2})?)\b')
+
 
 @dataclass
 class ScrapedPage:
@@ -131,6 +190,13 @@ class ScrapedPage:
     has_privacy_page: bool = False
     has_contact_page: bool = False
     has_return_policy: bool = False
+    is_opening_soon: bool = False
+    is_maintenance: bool = False
+    has_delivery_time: bool = False
+    has_preorder: bool = False
+    has_whatsapp_contact: bool = False
+    has_suspicious_prices: bool = False
+    detected_languages: list = field(default_factory=list)
     server_header: Optional[str] = None
     redirect_chain: list = field(default_factory=list)
     html_hash: Optional[str] = None
@@ -155,6 +221,13 @@ class CrawlResult:
     has_privacy_page: bool = False
     has_contact_page: bool = False
     has_return_policy: bool = False
+    is_opening_soon: bool = False
+    is_maintenance: bool = False
+    has_delivery_time: bool = False
+    has_preorder: bool = False
+    has_whatsapp_contact: bool = False
+    has_suspicious_prices: bool = False
+    detected_languages: list = field(default_factory=list)
     email_sources: dict = field(default_factory=dict)
     phone_sources: dict = field(default_factory=dict)
     kvk_sources: dict = field(default_factory=dict)
@@ -245,6 +318,64 @@ def _check_page_type(url):
         "is_return": any(p in path for p in [
             "/retour", "/return", "/ruil", "/retourneren"]),
     }
+
+
+def _detect_opening_soon(text_lower):
+    return any(kw in text_lower for kw in OPENING_SOON_KEYWORDS)
+
+
+def _detect_maintenance(text_lower, status_code):
+    if status_code == 503:
+        return True
+    return any(kw in text_lower for kw in MAINTENANCE_KEYWORDS)
+
+
+def _detect_languages(soup):
+    """Detecteer talen via HTML lang-attribuut en hreflang-links."""
+    langs = []
+    html_tag = soup.find("html")
+    if html_tag and html_tag.get("lang"):
+        lang = html_tag["lang"].split("-")[0].lower()
+        if len(lang) == 2 and lang not in langs:
+            langs.append(lang)
+    for link in soup.find_all("link", rel=lambda r: r and "alternate" in r):
+        hreflang = link.get("hreflang", "")
+        if hreflang and hreflang != "x-default":
+            lang = hreflang.split("-")[0].lower()
+            if len(lang) == 2 and lang not in langs:
+                langs.append(lang)
+    return langs
+
+
+def _detect_delivery_time(text_lower):
+    return any(kw in text_lower for kw in DELIVERY_TIME_KEYWORDS)
+
+
+def _detect_preorder(text_lower):
+    return any(kw in text_lower for kw in PREORDER_KEYWORDS)
+
+
+def _detect_whatsapp(html, external_links):
+    html_lower = html.lower()
+    if any(p in html_lower for p in ["wa.me/", "api.whatsapp.com", "whatsapp.com/send"]):
+        return True
+    if "whatsapp" in html_lower:
+        return True
+    return any("wa.me/" in link.lower() or "api.whatsapp.com" in link.lower()
+               for link in external_links)
+
+
+def _detect_suspicious_prices(text):
+    """Vlag als er prijzen onder €3 gedetecteerd worden (heuristiek)."""
+    prices = []
+    for match in PRICE_PATTERN.finditer(text):
+        val_str = match.group(1).replace(",", ".")
+        try:
+            prices.append(float(val_str))
+        except ValueError:
+            pass
+    valid = [p for p in prices if p > 0]
+    return bool(valid) and min(valid) < 3.0
 
 
 def _extract_emails(text, html):
@@ -418,6 +549,9 @@ def scrape_page(url, session):
         page.html_hash = hashlib.sha256(html.encode()).hexdigest()
         soup = BeautifulSoup(html, "lxml")
 
+        # Taaldetectie VOOR het verwijderen van script-tags (lang-attr zit op <html>)
+        page.detected_languages = _detect_languages(soup)
+
         # Structured data VOOR het verwijderen van script-tags
         structured = _extract_structured_data(soup)
 
@@ -461,6 +595,14 @@ def scrape_page(url, session):
         page.has_terms_page = pt["is_terms"]
         page.has_privacy_page = pt["is_privacy"]
         page.has_return_policy = pt["is_return"]
+
+        text_lower = visible_text.lower()
+        page.is_opening_soon = _detect_opening_soon(text_lower)
+        page.is_maintenance = _detect_maintenance(text_lower, response.status_code)
+        page.has_delivery_time = _detect_delivery_time(text_lower)
+        page.has_preorder = _detect_preorder(text_lower)
+        page.has_whatsapp_contact = _detect_whatsapp(html, page.external_links)
+        page.has_suspicious_prices = _detect_suspicious_prices(visible_text)
         return page
 
     except requests.Timeout:
@@ -578,6 +720,15 @@ def crawl_website(start_url, max_pages=DEFAULT_MAX_PAGES,
         if page.has_terms_page: result.has_terms_page = True
         if page.has_privacy_page: result.has_privacy_page = True
         if page.has_return_policy: result.has_return_policy = True
+        if page.is_opening_soon: result.is_opening_soon = True
+        if page.is_maintenance: result.is_maintenance = True
+        if page.has_delivery_time: result.has_delivery_time = True
+        if page.has_preorder: result.has_preorder = True
+        if page.has_whatsapp_contact: result.has_whatsapp_contact = True
+        if page.has_suspicious_prices: result.has_suspicious_prices = True
+        for lang in page.detected_languages:
+            if lang not in result.detected_languages:
+                result.detected_languages.append(lang)
 
         enqueue_links(page.internal_links)
 
@@ -621,6 +772,13 @@ def save_crawl_result(result, shop_id, scan_id, db_session):
         has_privacy_page=result.has_privacy_page,
         has_contact_page=result.has_contact_page,
         has_return_policy=result.has_return_policy,
+        is_opening_soon=result.is_opening_soon,
+        is_maintenance=result.is_maintenance,
+        has_delivery_time=result.has_delivery_time,
+        has_preorder=result.has_preorder,
+        has_whatsapp_contact=result.has_whatsapp_contact,
+        has_suspicious_prices=result.has_suspicious_prices,
+        detected_languages=json.dumps(result.detected_languages) if result.detected_languages else None,
         source_url=result.base_url, source="html_spider",
         collected_at=now, raw_html_hash=None,
     )
