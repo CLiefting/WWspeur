@@ -247,6 +247,21 @@ class ScamCheckResponse(BaseModel):
         from_attributes = True
 
 
+class BagValidationResponse(BaseModel):
+    """BAG/PDOK address validation record response."""
+    id: int
+    shop_id: int
+    scan_id: Optional[int]
+    addresses_checked: int
+    addresses_valid: int
+    addresses_invalid: int
+    validation_results: Optional[str]
+    collected_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class ShopDetailResponse(BaseModel):
     """Full shop details including all collector results."""
     id: int
@@ -268,6 +283,7 @@ class ShopDetailResponse(BaseModel):
     trustmark_records: List[TrustmarkResponse] = []
     ad_tracker_records: List[AdTrackerResponse] = []
     scam_check_records: List[ScamCheckResponse] = []
+    bag_validation_records: List[BagValidationResponse] = []
 
     class Config:
         from_attributes = True

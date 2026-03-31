@@ -492,11 +492,11 @@ def delete_all_shops(
     """Delete all shops and all associated scan data."""
     from app.models.collectors import (
         WhoisRecord, SSLRecord, ScrapeRecord, DnsHttpRecord,
-        TechRecord, TrustmarkRecord, AdTrackerRecord, KvKRecord, ScamCheckRecord, StatusCheckRecord,
+        TechRecord, TrustmarkRecord, AdTrackerRecord, KvKRecord, ScamCheckRecord, StatusCheckRecord, BagValidationRecord,
     )
     from app.models.scan import Scan
 
-    for model in [StatusCheckRecord, ScamCheckRecord, KvKRecord, AdTrackerRecord, TrustmarkRecord, TechRecord, DnsHttpRecord, ScrapeRecord, WhoisRecord, SSLRecord]:
+    for model in [StatusCheckRecord, BagValidationRecord, ScamCheckRecord, KvKRecord, AdTrackerRecord, TrustmarkRecord, TechRecord, DnsHttpRecord, ScrapeRecord, WhoisRecord, SSLRecord]:
         db.query(model).delete()
     db.query(Scan).delete()
     db.query(Shop).delete()
@@ -534,11 +534,11 @@ def clear_shop_scans(
 
     from app.models.collectors import (
         WhoisRecord, SSLRecord, ScrapeRecord, DnsHttpRecord,
-        TechRecord, TrustmarkRecord, AdTrackerRecord, KvKRecord, ScamCheckRecord, StatusCheckRecord,
+        TechRecord, TrustmarkRecord, AdTrackerRecord, KvKRecord, ScamCheckRecord, StatusCheckRecord, BagValidationRecord,
     )
     from app.models.scan import Scan
 
-    for model in [StatusCheckRecord, ScamCheckRecord, KvKRecord, AdTrackerRecord, TrustmarkRecord, TechRecord, DnsHttpRecord, ScrapeRecord, WhoisRecord, SSLRecord]:
+    for model in [StatusCheckRecord, BagValidationRecord, ScamCheckRecord, KvKRecord, AdTrackerRecord, TrustmarkRecord, TechRecord, DnsHttpRecord, ScrapeRecord, WhoisRecord, SSLRecord]:
         db.query(model).filter(model.shop_id == shop_id).delete()
     db.query(Scan).filter(Scan.shop_id == shop_id).delete()
     db.commit()

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { shops, scans } from '../services/api';
 
@@ -53,6 +53,28 @@ export default function ShopDetailPage() {
   const [error, setError] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [scanStatus, setScanStatus] = useState('');
+  const [scanStartedAt, setScanStartedAt] = useState(null);
+  const [tick, setTick] = useState(0);
+  const tickRef = useRef(null);
+
+  const fmtTime = (ms) => {
+    if (!ms || ms < 0) return '--:--';
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+    return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  };
+
+  useEffect(() => {
+    if (isScanning) {
+      tickRef.current = setInterval(() => setTick(t => t + 1), 1000);
+    } else {
+      clearInterval(tickRef.current);
+    }
+    return () => clearInterval(tickRef.current);
+  }, [isScanning]);
 
   const loadShop = async () => {
     try {
@@ -92,9 +114,10 @@ export default function ShopDetailPage() {
     setIsScanning(true);
     setScanStatus('Scan gestart...');
     setScanProgress(null);
+    setScanStartedAt(Date.now());
 
     try {
-      const scan = await scans.create(parseInt(id), ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape', 'kvk', 'scam_check'], 50);
+      const scan = await scans.create(parseInt(id), ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape', 'kvk', 'scam_check', 'bag_validation'], 50);
       await scans.pollUntilDone(
         scan.id,
         (s) => {
@@ -126,6 +149,7 @@ export default function ShopDetailPage() {
       setIsScanning(false);
       setScanStatus('');
       setScanProgress(null);
+      setScanStartedAt(null);
     }
   };
 
@@ -158,6 +182,7 @@ export default function ShopDetailPage() {
 
   // Get latest scrape record
   const latestScrape = shop.scrape_records?.[shop.scrape_records.length - 1];
+  const latestBag = shop.bag_validation_records?.[shop.bag_validation_records.length - 1];
   const latestWhois = shop.whois_records?.[shop.whois_records.length - 1];
   const latestSSL = shop.ssl_records?.[shop.ssl_records.length - 1];
   const latestDnsHttp = shop.dns_http_records?.[shop.dns_http_records.length - 1];
@@ -334,13 +359,32 @@ export default function ShopDetailPage() {
           background: 'var(--bg-card)', border: '1px solid var(--gold-dim)',
           borderRadius: 10, padding: '16px 20px', marginBottom: 24,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: scanProgress ? 12 : 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
             <div style={{
               width: 8, height: 8, borderRadius: '50%', background: 'var(--gold)',
               animation: 'pulse 1.5s ease-in-out infinite',
             }} />
             <span style={{ fontSize: 13, color: 'var(--gold-light)' }}>{scanStatus}</span>
           </div>
+          {scanStartedAt && (() => {
+            const elapsed = Date.now() - scanStartedAt;
+            const pagesDone = scanProgress?.pages_crawled || 0;
+            const pagesTotal = scanProgress?.max_pages || 50;
+            const avgMsPerPage = pagesDone > 0 && elapsed > 0 ? elapsed / pagesDone : null;
+            const eta = avgMsPerPage ? avgMsPerPage * Math.max(0, pagesTotal - pagesDone) : null;
+            return (
+              <div style={{ display: 'flex', gap: 20, marginBottom: scanProgress ? 12 : 0, fontSize: 11, fontFamily: 'var(--font-mono)' }}>
+                <span style={{ color: 'var(--text-muted)' }}>
+                  Verstreken: <span style={{ color: 'var(--gold-light)' }}>{fmtTime(elapsed)}</span>
+                </span>
+                {eta !== null && (
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    Nog ca: <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmtTime(eta)}</span>
+                  </span>
+                )}
+              </div>
+            );
+          })()}
           {scanProgress && (
             <>
               <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', marginBottom: 10 }}>
@@ -351,12 +395,13 @@ export default function ShopDetailPage() {
                   borderRadius: 2, transition: 'width 0.5s ease',
                 }} />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
                 {[
                   { label: "Pagina's", value: scanProgress.pages_crawled || 0 },
                   { label: 'E-mails', value: scanProgress.emails_found || 0 },
                   { label: 'Telefoon', value: scanProgress.phones_found || 0 },
                   { label: 'KvK', value: scanProgress.kvk_found || 0 },
+                  { label: 'Adressen', value: scanProgress.addresses_found || 0 },
                 ].map(({ label, value }) => (
                   <div key={label} style={{ textAlign: 'center' }}>
                     <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--gold)', lineHeight: 1 }}>{value}</div>
@@ -681,6 +726,64 @@ export default function ShopDetailPage() {
               );
             })()}
           </div>
+
+          {/* BAG adresvalidatie */}
+          {latestBag && latestBag.addresses_checked > 0 && (() => {
+            const results = (() => { try { return JSON.parse(latestBag.validation_results || '[]'); } catch { return []; } })();
+            return (
+              <div style={{
+                background: 'var(--bg-card)', border: '1px solid var(--border)',
+                borderRadius: 10, padding: '16px 20px', marginBottom: 24,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    📍 Adresvalidatie BAG/PDOK
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    <span style={{ color: latestBag.addresses_valid > 0 ? 'var(--success)' : 'var(--text-muted)', fontWeight: 600 }}>
+                      {latestBag.addresses_valid} geldig
+                    </span>
+                    {latestBag.addresses_invalid > 0 && (
+                      <span style={{ color: 'var(--danger)', fontWeight: 600, marginLeft: 10 }}>
+                        {latestBag.addresses_invalid} ongeldig
+                      </span>
+                    )}
+                    <span style={{ marginLeft: 10 }}>van {latestBag.addresses_checked}</span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {results.map((r, i) => (
+                    <div key={i} style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 10,
+                      padding: '8px 12px', borderRadius: 6,
+                      background: r.valid === true ? 'rgba(74,222,128,0.06)' : r.valid === false ? 'rgba(248,113,113,0.06)' : 'rgba(255,255,255,0.02)',
+                      border: `1px solid ${r.valid === true ? 'rgba(74,222,128,0.2)' : r.valid === false ? 'rgba(248,113,113,0.2)' : 'var(--border)'}`,
+                    }}>
+                      <span style={{ fontSize: 13, flexShrink: 0, marginTop: 1 }}>
+                        {r.valid === true ? '✓' : r.valid === false ? '✗' : '?'}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', wordBreak: 'break-word' }}>
+                          {r.address}
+                        </div>
+                        {r.valid && r.bag_address && r.bag_address !== r.address && (
+                          <div style={{ fontSize: 11, color: 'var(--success)', marginTop: 3 }}>
+                            BAG: {r.bag_address}
+                          </div>
+                        )}
+                        {r.error && (
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>Lookup mislukt</div>
+                        )}
+                      </div>
+                      {r.score > 0 && (
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>score {r.score}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* WHOIS & SSL side by side */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>

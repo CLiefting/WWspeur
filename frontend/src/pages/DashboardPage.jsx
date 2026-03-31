@@ -381,12 +381,13 @@ export default function DashboardPage() {
                   background: 'var(--gold-dim)', borderRadius: 2, transition: 'width 0.5s ease',
                 }} />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
                 {[
                   { label: "Pagina's", value: batchProgress.shopProgress.pages_crawled || 0 },
                   { label: 'E-mails', value: batchProgress.shopProgress.emails_found || 0 },
                   { label: 'Telefoon', value: batchProgress.shopProgress.phones_found || 0 },
                   { label: 'KvK', value: batchProgress.shopProgress.kvk_found || 0 },
+                  { label: 'Bewijs', value: (batchProgress.shopProgress.emails_found || 0) + (batchProgress.shopProgress.phones_found || 0) + (batchProgress.shopProgress.addresses_found || 0) + (batchProgress.shopProgress.kvk_found || 0) },
                 ].map(({ label, value }) => (
                   <div key={label} style={{ textAlign: 'center' }}>
                     <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--gold)', lineHeight: 1 }}>{value}</div>

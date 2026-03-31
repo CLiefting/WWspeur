@@ -340,6 +340,27 @@ class ScamCheckRecord(Base, TimestampMixin):
         return f"<ScamCheckRecord(id={self.id}, shop_id={self.shop_id}, flagged={self.flagged})>"
 
 
+class BagValidationRecord(Base, TimestampMixin):
+    """BAG/PDOK adresvalidatie resultaten."""
+    __tablename__ = "bag_validation_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id"), nullable=False, index=True)
+    scan_id = Column(Integer, ForeignKey("scans.id"), nullable=True)
+
+    addresses_checked = Column(Integer, nullable=False, default=0)
+    addresses_valid = Column(Integer, nullable=False, default=0)
+    addresses_invalid = Column(Integer, nullable=False, default=0)
+    validation_results = Column(Text, nullable=True)   # JSON list van individuele resultaten
+
+    collected_at = Column(DateTime, nullable=False)
+
+    shop = relationship("Shop", back_populates="bag_validation_records")
+
+    def __repr__(self):
+        return f"<BagValidationRecord(id={self.id}, shop_id={self.shop_id}, valid={self.addresses_valid}/{self.addresses_checked})>"
+
+
 class StatusCheckRecord(Base, TimestampMixin):
     """Website availability check — is the site online or offline?"""
     __tablename__ = "status_check_records"

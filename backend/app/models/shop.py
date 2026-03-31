@@ -49,6 +49,7 @@ class Shop(Base, TimestampMixin):
     trustmark_records = relationship("TrustmarkRecord", back_populates="shop", cascade="all, delete-orphan")
     ad_tracker_records = relationship("AdTrackerRecord", back_populates="shop", cascade="all, delete-orphan")
     scam_check_records = relationship("ScamCheckRecord", back_populates="shop", cascade="all, delete-orphan")
+    bag_validation_records = relationship("BagValidationRecord", back_populates="shop", cascade="all, delete-orphan")
     status_check_records = relationship("StatusCheckRecord", back_populates="shop", cascade="all, delete-orphan")
 
     def __repr__(self):

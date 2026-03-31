@@ -17,6 +17,7 @@ from app.collectors.trustmark_verify import verify_all_trustmarks, save_trustmar
 from app.collectors.ad_tracker import detect_ad_trackers, save_ad_tracker_result
 from app.collectors.kvk_lookup import lookup_kvk, save_kvk_result
 from app.collectors.scam_check import check_scam_databases, save_scam_check_result
+from app.collectors.bag_validation import validate_addresses, save_bag_result
 from app.services.progress import update_scan_progress
 
 logger = logging.getLogger(__name__)
@@ -281,4 +282,41 @@ def run_kvk_collector(shop: Shop, scan: Scan, db: Session, kvk_numbers: list = N
 
     except Exception as e:
         logger.error(f"KVK lookup failed for shop {shop.id}: {e}")
+        return {"error": str(e)}
+
+
+def run_bag_collector(shop: Shop, scan: Scan, db: Session) -> dict:
+    """Valideer gevonden adressen via PDOK/BAG (na scraper)."""
+    logger.info(f"Starting BAG validation for shop {shop.id}: {shop.url}")
+
+    try:
+        update_scan_progress(scan, db, {
+            "collector": "bag_validation",
+            "status": "Adressen valideren via BAG/PDOK...",
+        })
+
+        from app.models.collectors import ScrapeRecord
+        latest_scrape = (
+            db.query(ScrapeRecord)
+            .filter(ScrapeRecord.shop_id == shop.id)
+            .order_by(ScrapeRecord.id.desc())
+            .first()
+        )
+
+        addresses = []
+        if latest_scrape and latest_scrape.addresses_found:
+            try:
+                addresses = json.loads(latest_scrape.addresses_found)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        result = validate_addresses(addresses)
+        save_bag_result(result, shop.id, scan.id, db)
+        _mark_collector_done(scan, "bag_validation", db)
+
+        logger.info(f"BAG validation completed for shop {shop.id}: {result['addresses_valid']}/{result['addresses_checked']} geldig")
+        return result
+
+    except Exception as e:
+        logger.error(f"BAG validation failed for shop {shop.id}: {e}")
         return {"error": str(e)}

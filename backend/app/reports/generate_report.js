@@ -1,7 +1,8 @@
 const fs = require('fs');
+const puppeteer = require('puppeteer');
 const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
         Header, Footer, AlignmentType, HeadingLevel, BorderStyle, WidthType,
-        ShadingType, LevelFormat, PageBreak, PageNumber } = require('docx');
+        ShadingType, LevelFormat, PageBreak, PageNumber, ImageRun } = require('docx');
 
 // Read shop data from stdin
 let input = '';
@@ -25,6 +26,66 @@ function parseJSON(str) {
 function parseJSONObj(str) {
   if (!str) return {};
   try { return JSON.parse(str); } catch { return {}; }
+}
+
+async function dismissCookieBanner(page) {
+  try {
+    await new Promise(r => setTimeout(r, 1500));
+    await page.evaluate(() => {
+      const acceptTexts = [
+        'accepteer', 'accepteren', 'akkoord', 'alle cookies accepteren',
+        'alles accepteren', 'alles toestaan', 'toestaan', 'bevestigen',
+        'ik ga akkoord', 'ja, ik accepteer',
+        'accept all', 'accept cookies', 'accept all cookies', 'allow all',
+        'allow cookies', 'agree', 'i agree', 'agree to all', 'ok', 'got it',
+        'confirm', 'continue',
+        'alle akzeptieren', 'zustimmen', 'alle cookies akzeptieren', 'einverstanden',
+        'tout accepter', 'accepter', 'accepter tout', "j'accepte", "d'accord",
+        'aceptar todo', 'aceptar', 'acepto',
+      ];
+      const candidates = [...document.querySelectorAll('button, a[role="button"], [type="button"], [type="submit"]')];
+      for (const el of candidates) {
+        const text = (el.innerText || el.value || el.getAttribute('aria-label') || '').toLowerCase().trim();
+        if (acceptTexts.some(t => text === t || text.startsWith(t))) { el.click(); return; }
+      }
+      const selectors = [
+        '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+        '#CybotCookiebotDialogBodyButtonAccept',
+        '#onetrust-accept-btn-handler', '.onetrust-accept-btn-handler',
+        '.cky-btn-accept', '#cky-btn-accept', '.cl-gdpr-btn-accept',
+        '.cmplz-accept', '#cmplz-accept',
+        '#borlabs-cookie-btn-accept-all',
+        '.qc-cmp2-summary-buttons button:last-child',
+        '.iubenda-cs-accept-btn',
+        '#didomi-notice-agree-button',
+        '[data-accept-all]', '[data-cookiebanner="accept_button"]',
+        '.cookie-accept', '#cookie-accept', '.accept-cookies', '#accept-cookies',
+      ];
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el) { el.click(); return; }
+      }
+    });
+    await new Promise(r => setTimeout(r, 800));
+  } catch {}
+}
+
+async function takeScreenshot(url) {
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+  });
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 720 });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await dismissCookieBanner(page);
+    const buffer = await page.screenshot({ type: 'png', fullPage: false });
+    await page.close();
+    return buffer;
+  } finally {
+    await browser.close();
+  }
 }
 
 // Styling
@@ -73,6 +134,7 @@ function para(text, opts = {}) {
 
 async function generateReport(shop) {
   const children = [];
+  const screenshotBuffer = await takeScreenshot(shop.url).catch(() => null);
   const latestScrape = shop.scrape_records?.[shop.scrape_records?.length - 1];
   const latestWhois = shop.whois_records?.[shop.whois_records?.length - 1];
   const latestSSL = shop.ssl_records?.[shop.ssl_records?.length - 1];
@@ -81,6 +143,7 @@ async function generateReport(shop) {
   const latestTrustmark = shop.trustmark_records?.[shop.trustmark_records?.length - 1];
   const latestAdTracker = shop.ad_tracker_records?.[shop.ad_tracker_records?.length - 1];
   const latestScamCheck = shop.scam_check_records?.[shop.scam_check_records?.length - 1];
+  const latestBag = shop.bag_validation_records?.[shop.bag_validation_records?.length - 1];
   const kvkRecords = shop.kvk_records || [];
 
   // ── Title ──
@@ -92,6 +155,17 @@ async function generateReport(shop) {
   const scanDate = latestScan?.completed_at ? new Date(latestScan.completed_at).toLocaleString('nl-NL') : 'onbekend';
   children.push(new Paragraph({ spacing: { after: 200 },
     children: [new TextRun({ text: `URL: ${shop.url}  |  Gescand: ${scanDate}  |  Rapport: ${new Date().toLocaleString('nl-NL')}`, font: "Arial", size: 18, color: "888888" })] }));
+
+  if (screenshotBuffer) {
+    children.push(new Paragraph({
+      spacing: { after: 200 },
+      children: [new ImageRun({
+        data: screenshotBuffer,
+        transformation: { width: 600, height: 338 },
+        type: 'png',
+      })]
+    }));
+  }
 
   // ── Samenvatting ──
   children.push(heading("Samenvatting"));
@@ -463,6 +537,32 @@ async function generateReport(shop) {
         children.push(para(`    Gevonden op: ${sources.slice(0,3).join(', ')}`, { size: 16, color: "888888" }));
       }
     });
+  }
+
+  // ── BAG adresvalidatie ──
+  if (latestBag && latestBag.addresses_checked > 0) {
+    children.push(heading("Adresvalidatie BAG/PDOK"));
+    children.push(new Table({
+      width: { size: TABLE_WIDTH, type: WidthType.DXA }, columnWidths: COL2,
+      rows: [
+        infoRow("Gecontroleerde adressen", String(latestBag.addresses_checked)),
+        infoRow("Geldig (in BAG)", String(latestBag.addresses_valid), altRowShading),
+        infoRow("Ongeldig / niet gevonden", String(latestBag.addresses_invalid)),
+      ]
+    }));
+    let bagResults = [];
+    try { bagResults = JSON.parse(latestBag.validation_results || '[]'); } catch {}
+    if (bagResults.length > 0) {
+      children.push(para(" "));
+      bagResults.forEach(r => {
+        const status = r.valid === true ? '✓ Geldig' : r.valid === false ? '✗ Niet gevonden' : '? Onbekend';
+        const color = r.valid === true ? '22C55E' : r.valid === false ? 'F87171' : '888888';
+        children.push(para(`${status}  ${r.address}`, { size: 20, color }));
+        if (r.valid && r.bag_address && r.bag_address !== r.address) {
+          children.push(para(`    BAG: ${r.bag_address}`, { size: 18, color: '888888' }));
+        }
+      });
+    }
   }
 
   // Social media
