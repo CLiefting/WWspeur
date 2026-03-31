@@ -12,11 +12,11 @@ from app.models.user import User
 from app.models.shop import Shop
 from app.models.scan import Scan, ScanStatus
 from app.schemas.scan import ScanCreate, ScanResponse
-from app.services.scan_service import run_scrape_collector, run_whois_collector, run_ssl_collector, run_dns_http_collector, run_tech_collector, run_trustmark_collector, run_ad_tracker_collector, run_kvk_collector
+from app.services.scan_service import run_scrape_collector, run_whois_collector, run_ssl_collector, run_dns_http_collector, run_tech_collector, run_trustmark_collector, run_ad_tracker_collector, run_kvk_collector, run_scam_check_collector
 
 router = APIRouter()
 
-VALID_COLLECTORS = {"whois", "ssl", "scrape", "kvk", "dns_http", "tech", "trustmark", "ad_tracker"}
+VALID_COLLECTORS = {"whois", "ssl", "scrape", "kvk", "dns_http", "tech", "trustmark", "ad_tracker", "scam_check"}
 
 
 @router.post("/", response_model=ScanResponse, status_code=status.HTTP_201_CREATED)
@@ -155,6 +155,13 @@ def _run_scan_background(scan_id: int, shop_id: int, collectors: list[str], max_
                 run_kvk_collector(shop=shop, scan=scan, db=db)
             except Exception as e:
                 logger.error(f"KVK lookup failed: {e}")
+
+        # Run scam database check
+        if "scam_check" in collectors:
+            try:
+                run_scam_check_collector(shop=shop, scan=scan, db=db)
+            except Exception as e:
+                logger.error(f"Scam check failed: {e}")
 
         # If not already marked completed by the last collector
         if scan.status == "running":

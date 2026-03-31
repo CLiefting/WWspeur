@@ -291,3 +291,41 @@ class AdTrackerRecord(Base, TimestampMixin):
 
     def __repr__(self):
         return f"<AdTrackerRecord(id={self.id}, shop_id={self.shop_id}, ids={self.total_unique_ids})>"
+
+
+class ScamCheckRecord(Base, TimestampMixin):
+    """Results from scam/fraud database checks."""
+    __tablename__ = "scam_check_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(Integer, ForeignKey("shops.id"), nullable=False)
+    scan_id = Column(Integer, ForeignKey("scans.id"), nullable=True)
+
+    domain = Column(String(255), nullable=True)
+    flagged = Column(Boolean, nullable=False, default=False)
+    total_hits = Column(Integer, nullable=False, default=0)
+
+    # opgelicht.nl
+    opgelicht_found = Column(Boolean, nullable=False, default=False)
+    opgelicht_count = Column(Integer, nullable=False, default=0)
+    opgelicht_hits = Column(Text, nullable=True)    # JSON list
+
+    # fraudehelpdesk.nl
+    fraudehelpdesk_found = Column(Boolean, nullable=False, default=False)
+    fraudehelpdesk_count = Column(Integer, nullable=False, default=0)
+    fraudehelpdesk_hits = Column(Text, nullable=True)   # JSON list
+
+    # watchlistinternet.nl
+    watchlist_found = Column(Boolean, nullable=False, default=False)
+    watchlist_count = Column(Integer, nullable=False, default=0)
+    watchlist_hits = Column(Text, nullable=True)    # JSON list
+    watchlist_warning_level = Column(String(50), nullable=True)
+
+    source = Column(String(255), nullable=False, default="scam_check")
+    raw_data = Column(Text, nullable=True)
+    collected_at = Column(DateTime, nullable=False)
+
+    shop = relationship("Shop", back_populates="scam_check_records")
+
+    def __repr__(self):
+        return f"<ScamCheckRecord(id={self.id}, shop_id={self.shop_id}, flagged={self.flagged})>"

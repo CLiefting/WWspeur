@@ -94,7 +94,7 @@ export default function ShopDetailPage() {
     setScanProgress(null);
 
     try {
-      const scan = await scans.create(parseInt(id), ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape', 'kvk'], 50);
+      const scan = await scans.create(parseInt(id), ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape', 'kvk', 'scam_check'], 50);
       await scans.pollUntilDone(
         scan.id,
         (s) => {
@@ -195,6 +195,7 @@ export default function ShopDetailPage() {
   const adCrossRefs = latestAdTracker ? parseJSON(latestAdTracker.cross_references) : [];
   const adRawData = latestAdTracker ? parseJSONObj(latestAdTracker.raw_data) : {};
   const hackerTarget = adRawData?.hackertarget;
+  const latestScamCheck = shop.scam_check_records?.[shop.scam_check_records?.length - 1];
   const kvkRecords = shop.kvk_records || [];
   const latestKvk = kvkRecords.length > 0 ? kvkRecords[kvkRecords.length - 1] : null;
 
@@ -285,6 +286,43 @@ export default function ShopDetailPage() {
               onMouseLeave={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.color = 'var(--text-secondary)'; }}
             >
               📄 Download rapport
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  const token = localStorage.getItem('wwspeur_token');
+                  const response = await fetch(`/api/v1/shops/${id}/evidence`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                  });
+                  if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Download mislukt');
+                  }
+                  const blob = await response.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  const contentDisp = response.headers.get('content-disposition');
+                  const match = contentDisp?.match(/filename="?([^"]+)"?/);
+                  a.download = match ? match[1] : `wwspeur_bewijs_${shop.domain.replace(/\./g,'_')}.zip`;
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                } catch (err) {
+                  alert('Bewijs downloaden mislukt: ' + err.message);
+                }
+              }}
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                color: 'var(--text-secondary)',
+                fontWeight: 500, fontSize: 13,
+                padding: '10px 20px', borderRadius: 8,
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={e => { e.target.style.borderColor = 'var(--gold-dim)'; e.target.style.color = 'var(--gold)'; }}
+              onMouseLeave={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.color = 'var(--text-secondary)'; }}
+            >
+              🗂 Download bewijs (ZIP)
             </button>
           </div>
         </div>
@@ -1503,6 +1541,82 @@ export default function ShopDetailPage() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Scam database check */}
+          {latestScamCheck && (
+            <div style={{
+              background: latestScamCheck.flagged
+                ? 'rgba(248, 113, 113, 0.08)'
+                : 'var(--bg-card)',
+              border: `1px solid ${latestScamCheck.flagged ? 'rgba(248,113,113,0.4)' : 'var(--border)'}`,
+              borderRadius: 10, padding: '16px 20px', marginBottom: 16,
+            }}>
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                marginBottom: 12,
+              }}>
+                <div style={{
+                  fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: latestScamCheck.flagged ? 'var(--danger)' : 'var(--text-muted)',
+                }}>
+                  {latestScamCheck.flagged ? '⚠️' : '✅'} Fraudedatabases Check
+                </div>
+                <div style={{
+                  fontSize: 11, padding: '3px 10px', borderRadius: 20,
+                  background: latestScamCheck.flagged
+                    ? 'rgba(248,113,113,0.15)' : 'rgba(34,197,94,0.1)',
+                  color: latestScamCheck.flagged ? 'var(--danger)' : 'var(--success)',
+                  fontWeight: 600,
+                }}>
+                  {latestScamCheck.flagged
+                    ? `GEVONDEN — ${latestScamCheck.total_hits} melding(en)`
+                    : 'Schoon'}
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                {[
+                  { key: 'opgelicht', label: 'opgelicht.nl', found: latestScamCheck.opgelicht_found, count: latestScamCheck.opgelicht_count, hits: latestScamCheck.opgelicht_hits },
+                  { key: 'fraudehelpdesk', label: 'fraudehelpdesk.nl', found: latestScamCheck.fraudehelpdesk_found, count: latestScamCheck.fraudehelpdesk_count, hits: latestScamCheck.fraudehelpdesk_hits },
+                  { key: 'watchlist', label: 'watchlistinternet.nl', found: latestScamCheck.watchlist_found, count: latestScamCheck.watchlist_count, hits: latestScamCheck.watchlist_hits, level: latestScamCheck.watchlist_warning_level },
+                ].map(src => (
+                  <div key={src.key} style={{
+                    padding: '10px 12px', borderRadius: 8,
+                    background: src.found ? 'rgba(248,113,113,0.1)' : 'rgba(255,255,255,0.02)',
+                    border: `1px solid ${src.found ? 'rgba(248,113,113,0.3)' : 'var(--border)'}`,
+                  }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: src.found ? 'var(--danger)' : 'var(--text-secondary)', marginBottom: 4 }}>
+                      {src.found ? '⚠' : '✓'} {src.label}
+                    </div>
+                    {src.found ? (
+                      <>
+                        <div style={{ fontSize: 12, color: 'var(--danger)', fontWeight: 600 }}>
+                          {src.count} melding(en)
+                        </div>
+                        {src.level && (
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                            Niveau: {src.level}
+                          </div>
+                        )}
+                        {(() => {
+                          const hits = latestScamCheck[`${src.key}_hits`];
+                          const parsed = hits ? (() => { try { return JSON.parse(hits); } catch { return []; } })() : [];
+                          return parsed.slice(0, 2).map((h, i) => (
+                            <div key={i} style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3, fontStyle: 'italic' }}>
+                              "{h.length > 60 ? h.slice(0, 60) + '…' : h}"
+                            </div>
+                          ));
+                        })()}
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Geen melding gevonden</div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

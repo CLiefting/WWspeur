@@ -33,7 +33,7 @@ export function ScanProvider({ children }) {
 
     const scan = await scans.create(
       shopId,
-      ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape', 'kvk'],
+      ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape', 'kvk', 'scam_check'],
       maxPages,
     );
     setCurrentScanId(scan.id);
@@ -111,7 +111,7 @@ export function ScanProvider({ children }) {
         try {
           const scan = await scans.create(
             shop.id,
-            ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape', 'kvk'],
+            ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape', 'kvk', 'scam_check'],
             maxPages,
           );
           setCurrentScanId(scan.id);
@@ -187,7 +187,7 @@ export function ScanProvider({ children }) {
         try {
           const scan = await scans.create(
             shop.id,
-            ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape', 'kvk'],
+            ['whois', 'ssl', 'dns_http', 'tech', 'trustmark', 'ad_tracker', 'scrape', 'kvk', 'scam_check'],
             maxPages,
           );
 

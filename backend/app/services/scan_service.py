@@ -16,6 +16,7 @@ from app.collectors.tech_detect import detect_technologies, save_tech_result
 from app.collectors.trustmark_verify import verify_all_trustmarks, save_trustmark_result
 from app.collectors.ad_tracker import detect_ad_trackers, save_ad_tracker_result
 from app.collectors.kvk_lookup import lookup_kvk, save_kvk_result
+from app.collectors.scam_check import check_scam_databases, save_scam_check_result
 from app.services.progress import update_scan_progress
 
 logger = logging.getLogger(__name__)
@@ -211,6 +212,28 @@ def run_scrape_collector(
     except Exception as e:
         logger.error(f"Scrape collector failed for shop {shop.id}: {e}")
         raise
+
+
+def run_scam_check_collector(shop: Shop, scan: Scan, db: Session) -> dict:
+    """Run the scam database check collector."""
+    logger.info(f"Starting scam check for shop {shop.id}: {shop.url}")
+
+    try:
+        update_scan_progress(scan, db, {
+            "collector": "scam_check",
+            "status": "Fraudedatabases controleren...",
+        })
+
+        result = check_scam_databases(shop.url)
+        save_scam_check_result(result, shop.id, scan.id, db)
+        _mark_collector_done(scan, "scam_check", db)
+
+        logger.info(f"Scam check completed for shop {shop.id}: flagged={result.get('flagged')}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Scam check failed for shop {shop.id}: {e}")
+        return {"error": str(e)}
 
 
 def run_kvk_collector(shop: Shop, scan: Scan, db: Session, kvk_numbers: list = None) -> dict:

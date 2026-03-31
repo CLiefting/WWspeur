@@ -366,6 +366,20 @@ def list_shops(
                 resp.scan_stats = {}
             resp.scan_stats["platform"] = latest_tech.ecommerce_platform or latest_tech.cms or None
 
+        # Add scam check summary
+        from app.models.collectors import ScamCheckRecord
+        latest_scam = (
+            db.query(ScamCheckRecord)
+            .filter(ScamCheckRecord.shop_id == shop.id)
+            .order_by(ScamCheckRecord.id.desc())
+            .first()
+        )
+        if latest_scam:
+            if resp.scan_stats is None:
+                resp.scan_stats = {}
+            resp.scan_stats["scam_flagged"] = latest_scam.flagged
+            resp.scan_stats["scam_hits"] = latest_scam.total_hits
+
         shop_responses.append(resp)
 
     return ShopListResponse(
@@ -481,11 +495,11 @@ def clear_shop_scans(
 
     from app.models.collectors import (
         WhoisRecord, SSLRecord, ScrapeRecord, DnsHttpRecord,
-        TechRecord, TrustmarkRecord, AdTrackerRecord, KvkRecord,
+        TechRecord, TrustmarkRecord, AdTrackerRecord, KvkRecord, ScamCheckRecord,
     )
     from app.models.scan import Scan
 
-    for model in [KvkRecord, AdTrackerRecord, TrustmarkRecord, TechRecord, DnsHttpRecord, ScrapeRecord, WhoisRecord, SSLRecord]:
+    for model in [ScamCheckRecord, KvkRecord, AdTrackerRecord, TrustmarkRecord, TechRecord, DnsHttpRecord, ScrapeRecord, WhoisRecord, SSLRecord]:
         db.query(model).filter(model.shop_id == shop_id).delete()
     db.query(Scan).filter(Scan.shop_id == shop_id).delete()
     db.commit()
@@ -568,6 +582,119 @@ def download_report(
     except subprocess.TimeoutExpired:
         os.unlink(tmp_path)
         raise HTTPException(status_code=500, detail="Rapport generatie timeout")
+
+
+@router.get("/{shop_id}/evidence")
+def download_evidence(
+    shop_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Genereer bewijsdocumenten (PDF per bronpagina) voor een shop.
+    Per URL waarop bevindingen zijn gedaan wordt een PDF gemaakt met
+    een screenshot van de pagina en een tabel van de gevonden gegevens.
+    De PDFs worden verpakt in een ZIP-bestand.
+    """
+    import json
+    import subprocess
+    import tempfile
+    import os
+    import zipfile
+    import shutil
+    from fastapi.responses import FileResponse
+    from fastapi import BackgroundTasks
+
+    shop = db.query(Shop).filter(Shop.id == shop_id).first()
+    if not shop:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Webwinkel niet gevonden",
+        )
+
+    from app.schemas.scan import ShopDetailResponse
+    shop_data = ShopDetailResponse.from_orm(shop).dict()
+
+    def serialize(obj):
+        if hasattr(obj, 'isoformat'):
+            return obj.isoformat()
+        return obj
+
+    shop_json = json.dumps(shop_data, default=serialize)
+
+    report_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "reports")
+    script_path = os.path.join(report_dir, "generate_evidence.js")
+
+    evidence_dir = tempfile.mkdtemp(prefix="wwspeur_evidence_")
+
+    try:
+        result = subprocess.run(
+            ["node", script_path, evidence_dir],
+            input=shop_json,
+            capture_output=True,
+            text=True,
+            timeout=300,  # Max 5 minuten (meerdere paginas)
+        )
+
+        if result.returncode != 0:
+            shutil.rmtree(evidence_dir, ignore_errors=True)
+            raise HTTPException(
+                status_code=500,
+                detail="Bewijs generatie mislukt: {}".format(result.stderr[:200]),
+            )
+
+        try:
+            output = json.loads(result.stdout)
+        except Exception:
+            shutil.rmtree(evidence_dir, ignore_errors=True)
+            raise HTTPException(status_code=500, detail="Onverwachte output van bewijs generator")
+
+        files = output.get("files", [])
+        if not files:
+            shutil.rmtree(evidence_dir, ignore_errors=True)
+            raise HTTPException(
+                status_code=404,
+                detail="Geen bronpagina's met bevindingen gevonden. Voer eerst een scan uit.",
+            )
+
+        # Pak alle PDFs in een ZIP
+        from datetime import datetime as dt
+        timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+        zip_path = tempfile.mktemp(suffix=".zip")
+
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for f in files:
+                pdf_path = os.path.join(evidence_dir, f["filename"])
+                if os.path.exists(pdf_path):
+                    zf.write(pdf_path, f["filename"])
+
+        def cleanup():
+            shutil.rmtree(evidence_dir, ignore_errors=True)
+            try:
+                os.unlink(zip_path)
+            except OSError:
+                pass
+
+        bg = BackgroundTasks()
+        bg.add_task(cleanup)
+
+        return FileResponse(
+            path=zip_path,
+            media_type="application/zip",
+            filename="wwspeur_bewijs_{}_{}.zip".format(
+                shop.domain.replace(".", "_"), timestamp
+            ),
+            background=bg,
+        )
+
+    except subprocess.TimeoutExpired:
+        shutil.rmtree(evidence_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail="Bewijs generatie timeout (te veel paginas)")
+    except HTTPException:
+        raise
+    except Exception as e:
+        shutil.rmtree(evidence_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/batch-reports")

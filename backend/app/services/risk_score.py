@@ -87,6 +87,10 @@ SCORING_RULES = [
          tip="Geen geverifieerd keurmerk gevonden."),
     Rule("no_fake_tm",       "Geen vals keurmerk",            10, malus=20,
          tip="Vals of niet-geverifieerd keurmerk gevonden — sterke rode vlag."),
+
+    # ── Fraudedatabases ───────────────────────────────────────────────────────
+    Rule("not_in_scam_db",   "Niet in fraudedatabase",         0, malus=40,
+         tip="Domein gevonden in fraudedatabase (opgelicht.nl / fraudehelpdesk.nl / watchlistinternet.nl) — kritiek risico."),
 ]
 
 MAX_SCORE = sum(r.points for r in SCORING_RULES)  # theoretisch maximum
@@ -107,7 +111,7 @@ def _collect_data(shop_id: int, db) -> dict:
     """Haal de meest recente collector-resultaten op voor een shop."""
     from app.models.collectors import (
         ScrapeRecord, WhoisRecord, SSLRecord,
-        TrustmarkRecord, KvkRecord,
+        TrustmarkRecord, KvkRecord, ScamCheckRecord,
     )
 
     def latest(model):
@@ -123,6 +127,7 @@ def _collect_data(shop_id: int, db) -> dict:
     ssl       = latest(SSLRecord)
     trustmark = latest(TrustmarkRecord)
     kvk_rec   = latest(KvkRecord)
+    scam      = latest(ScamCheckRecord)
 
     def parse(val):
         if not val:
@@ -152,6 +157,8 @@ def _collect_data(shop_id: int, db) -> dict:
         "tm_fake":       (trustmark.claimed_not_verified or 0) if trustmark else 0,
         # KvK
         "kvk_verified":  bool(kvk_rec and kvk_rec.kvk_number) if kvk_rec else False,
+        # Scam check — None = not yet run, False = clean, True = flagged
+        "scam_flagged":  scam.flagged if scam else None,
     }
     return data
 
@@ -178,6 +185,8 @@ def calculate_risk(shop_id: int, db) -> ScoreResult:
         "domain_age_2yr":   (data["domain_age"] or 0) >= 730,
         "has_verified_tm":  data["tm_verified"] > 0,
         "no_fake_tm":       data["tm_fake"] == 0,
+        # Scam check: True (clean) als scam_flagged False is; als None (niet gedraaid) → True (geen malus)
+        "not_in_scam_db":   data["scam_flagged"] is not True,
     }
 
     raw_score = 0

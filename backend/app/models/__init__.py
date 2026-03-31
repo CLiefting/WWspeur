@@ -5,7 +5,7 @@ from app.models.base import Base, TimestampMixin
 from app.models.user import User
 from app.models.shop import Shop, RiskLevel
 from app.models.scan import Scan, ScanStatus
-from app.models.collectors import WhoisRecord, SSLRecord, ScrapeRecord, KvKRecord, DnsHttpRecord, TechRecord, TrustmarkRecord, AdTrackerRecord
+from app.models.collectors import WhoisRecord, SSLRecord, ScrapeRecord, KvKRecord, DnsHttpRecord, TechRecord, TrustmarkRecord, AdTrackerRecord, ScamCheckRecord
 from app.models.settings import Setting
 
 __all__ = [
@@ -13,5 +13,5 @@ __all__ = [
     "Scan", "ScanStatus",
     "WhoisRecord", "SSLRecord", "ScrapeRecord", "KvKRecord",
     "DnsHttpRecord", "TechRecord", "TrustmarkRecord", "AdTrackerRecord",
-    "Setting",
+    "ScamCheckRecord", "Setting",
 ]

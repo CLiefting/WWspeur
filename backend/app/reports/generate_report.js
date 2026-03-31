@@ -80,6 +80,7 @@ async function generateReport(shop) {
   const latestTech = shop.tech_records?.[shop.tech_records?.length - 1];
   const latestTrustmark = shop.trustmark_records?.[shop.trustmark_records?.length - 1];
   const latestAdTracker = shop.ad_tracker_records?.[shop.ad_tracker_records?.length - 1];
+  const latestScamCheck = shop.scam_check_records?.[shop.scam_check_records?.length - 1];
   const kvkRecords = shop.kvk_records || [];
 
   // ── Title ──
@@ -170,16 +171,15 @@ async function generateReport(shop) {
       validIbans.forEach(iban => { const cc = (iban || '').substring(0,2).toUpperCase(); if (!byCountry[cc]) byCountry[cc] = []; byCountry[cc].push(iban); });
       const sorted = Object.keys(byCountry).sort((a,b) => a === 'NL' ? -1 : b === 'NL' ? 1 : a.localeCompare(b));
 
-      const ibanRows = [new TableRow({ children: [headerCell("Land", COL3[0]), headerCell("IBAN", COL3[1]), headerCell("Opmerking", COL3[2])] })];
+      const ibanRows = [new TableRow({ children: [headerCell("Land", COL3[0]), headerCell("IBAN", COL3[1]), headerCell("Landcode", COL3[2])] })];
       let alt = false;
       sorted.forEach(cc => {
         byCountry[cc].forEach(iban => {
           const sh = alt ? altRowShading : undefined;
-          const note = cc !== 'NL' ? 'BUITENLANDS' : '';
           ibanRows.push(new TableRow({ children: [
             cell(COUNTRIES[cc] || cc, COL3[0], { shading: sh }),
             cell(iban, COL3[1], { shading: sh }),
-            cell(note, COL3[2], { shading: sh, color: note ? "CC0000" : undefined, bold: !!note }),
+            cell(cc, COL3[2], { shading: sh }),
           ]}));
           alt = !alt;
         });
@@ -222,8 +222,8 @@ async function generateReport(shop) {
         infoRow("Uitgever", latestSSL.issuer, altRowShading),
         infoRow("Geldig vanaf", latestSSL.valid_from),
         infoRow("Geldig tot", latestSSL.valid_until, altRowShading),
-        infoRow("Verlopen", latestSSL.is_expired ? "JA" : "Nee"),
-        infoRow("Self-signed", latestSSL.is_self_signed ? "JA" : "Nee", altRowShading),
+        infoRow("Verlopen", latestSSL.is_expired ? "Ja" : "Nee"),
+        infoRow("Self-signed", latestSSL.is_self_signed ? "Ja" : "Nee", altRowShading),
       ]
     }));
   }
@@ -244,7 +244,7 @@ async function generateReport(shop) {
         infoRow("Security headers score", `${latestDnsHttp.security_score || 0}%`),
         infoRow("HTTP → HTTPS redirect", latestDnsHttp.http_to_https ? "Ja" : "Nee", altRowShading),
         infoRow("Aantal redirects", String(latestDnsHttp.redirect_count || 0)),
-        infoRow("Domein wijzigt bij redirect", latestDnsHttp.domain_changed ? "JA" : "Nee", altRowShading),
+        infoRow("Domein wijzigt bij redirect", latestDnsHttp.domain_changed ? "Ja" : "Nee", altRowShading),
         infoRow("Server", latestDnsHttp.server_header || '—'),
       ]
     }));
@@ -304,10 +304,10 @@ async function generateReport(shop) {
         let details = v.details || '';
         if (v.score) details += ` Score: ${v.score}/5`;
         if (v.reviews) details += ` (${v.reviews} reviews)`;
-        if (v.claimed && !v.verified) details += ' — VALS GECLAIMED!';
+        if (v.claimed && !v.verified) details += ' (geclaimed, niet geverifieerd)';
         tmRows.push(new TableRow({ children: [
           cell(v.name, 3120, { shading: sh }),
-          cell(statusMap[v.status] || v.status, 3120, { shading: sh, color: v.verified ? "007700" : v.claimed ? "CC0000" : undefined }),
+          cell(statusMap[v.status] || v.status, 3120, { shading: sh }),
           cell(details, 3120, { shading: sh }),
         ]}));
         alt = !alt;
@@ -326,7 +326,7 @@ async function generateReport(shop) {
         infoRow("Rechtsvorm", kvk.legal_form || '—'),
         infoRow("Adres", [kvk.street, kvk.house_number].filter(Boolean).join(' ') || '—', altRowShading),
         infoRow("Plaats", [kvk.postal_code, kvk.city].filter(Boolean).join(' ') || '—'),
-        infoRow("Actief", kvk.is_active === false ? "NEE - Uitgeschreven!" : kvk.is_active === true ? "Ja" : "Onbekend", altRowShading),
+        infoRow("Actief", kvk.is_active === false ? "Nee" : kvk.is_active === true ? "Ja" : "Onbekend", altRowShading),
       ];
       children.push(new Table({ width: { size: TABLE_WIDTH, type: WidthType.DXA }, columnWidths: COL2, rows }));
     });
@@ -344,7 +344,7 @@ async function generateReport(shop) {
         tracker.ids?.forEach(idInfo => {
           children.push(para(`  ${idInfo.display_id}`));
           if (idInfo.online_results?.other_sites?.length > 0) {
-            children.push(para(`    Ook gevonden op: ${idInfo.online_results.other_sites.map(s => s.domain).join(', ')}`, { color: "CC0000", size: 20 }));
+            children.push(para(`    Ook gevonden op: ${idInfo.online_results.other_sites.map(s => s.domain).join(', ')}`, { size: 20 }));
           }
         });
       });
@@ -352,10 +352,55 @@ async function generateReport(shop) {
 
     if (crossRefs.length > 0) {
       children.push(para(""));
-      children.push(para("Cross-referenties:", { bold: true, color: "CC0000" }));
+      children.push(para("Cross-referenties:", { bold: true }));
       crossRefs.forEach(xref => {
         children.push(para(`${xref.id} (${xref.platform}) — ook op: ${xref.other_domains?.slice(0,5).join(', ')}`, { size: 20 }));
       });
+    }
+  }
+
+  // ── Fraudedatabases ──
+  if (latestScamCheck) {
+    children.push(heading("Fraudedatabases Check"));
+    const scamFlagged = latestScamCheck.flagged;
+    const flaggedSources = [];
+    if (latestScamCheck.opgelicht_found) flaggedSources.push('opgelicht.nl');
+    if (latestScamCheck.fraudehelpdesk_found) flaggedSources.push('fraudehelpdesk.nl');
+    if (latestScamCheck.watchlist_found) flaggedSources.push('watchlistinternet.nl');
+
+    children.push(new Table({
+      width: { size: TABLE_WIDTH, type: WidthType.DXA }, columnWidths: COL2,
+      rows: [
+        infoRow("Domein", latestScamCheck.domain || '—'),
+        infoRow("In fraudedatabase gevonden", scamFlagged ? "Ja" : "Nee", altRowShading),
+        infoRow("Aantal meldingen", String(latestScamCheck.total_hits || 0)),
+        infoRow("Gevonden in", flaggedSources.length > 0 ? flaggedSources.join(', ') : '—', altRowShading),
+      ]
+    }));
+
+    if (scamFlagged) {
+      children.push(para(""));
+      const sourceRows = [new TableRow({ children: [headerCell("Bron", 3120), headerCell("Meldingen", 1560), headerCell("Details", 4680)] })];
+      const sources = [
+        { key: 'opgelicht', label: 'opgelicht.nl', found: latestScamCheck.opgelicht_found, count: latestScamCheck.opgelicht_count, hits: parseJSON(latestScamCheck.opgelicht_hits) },
+        { key: 'fraudehelpdesk', label: 'fraudehelpdesk.nl', found: latestScamCheck.fraudehelpdesk_found, count: latestScamCheck.fraudehelpdesk_count, hits: parseJSON(latestScamCheck.fraudehelpdesk_hits) },
+        { key: 'watchlist', label: 'watchlistinternet.nl', found: latestScamCheck.watchlist_found, count: latestScamCheck.watchlist_count, hits: parseJSON(latestScamCheck.watchlist_hits) },
+      ];
+      let alt = false;
+      sources.forEach(s => {
+        if (s.found) {
+          const sh = alt ? altRowShading : undefined;
+          sourceRows.push(new TableRow({ children: [
+            cell(s.label, 3120, { shading: sh, bold: true }),
+            cell(String(s.count), 1560, { shading: sh }),
+            cell(s.hits.slice(0, 2).join(' | ') || '—', 4680, { shading: sh }),
+          ]}));
+          alt = !alt;
+        }
+      });
+      if (sourceRows.length > 1) {
+        children.push(new Table({ width: { size: TABLE_WIDTH, type: WidthType.DXA }, columnWidths: [3120, 1560, 4680], rows: sourceRows }));
+      }
     }
   }
 

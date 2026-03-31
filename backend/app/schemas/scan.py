@@ -206,6 +206,47 @@ class TrustmarkResponse(BaseModel):
         from_attributes = True
 
 
+class AdTrackerResponse(BaseModel):
+    """Ad tracker detection record response."""
+    id: int
+    shop_id: int
+    trackers: Optional[str]
+    all_ids: Optional[str]
+    all_ids_flat: Optional[str]
+    total_trackers: Optional[int]
+    total_unique_ids: Optional[int]
+    cross_references: Optional[str]
+    source: str
+    collected_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ScamCheckResponse(BaseModel):
+    """Scam database check record response."""
+    id: int
+    shop_id: int
+    domain: Optional[str]
+    flagged: bool
+    total_hits: int
+    opgelicht_found: bool
+    opgelicht_count: int
+    opgelicht_hits: Optional[str]
+    fraudehelpdesk_found: bool
+    fraudehelpdesk_count: int
+    fraudehelpdesk_hits: Optional[str]
+    watchlist_found: bool
+    watchlist_count: int
+    watchlist_hits: Optional[str]
+    watchlist_warning_level: Optional[str]
+    source: str
+    collected_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class ShopDetailResponse(BaseModel):
     """Full shop details including all collector results."""
     id: int
@@ -225,24 +266,8 @@ class ShopDetailResponse(BaseModel):
     dns_http_records: List[DnsHttpResponse] = []
     tech_records: List[TechResponse] = []
     trustmark_records: List[TrustmarkResponse] = []
-    ad_tracker_records: List['AdTrackerResponse'] = []
-
-    class Config:
-        from_attributes = True
-
-
-class AdTrackerResponse(BaseModel):
-    """Ad tracker detection record response."""
-    id: int
-    shop_id: int
-    trackers: Optional[str]
-    all_ids: Optional[str]
-    all_ids_flat: Optional[str]
-    total_trackers: Optional[int]
-    total_unique_ids: Optional[int]
-    cross_references: Optional[str]
-    source: str
-    collected_at: datetime
+    ad_tracker_records: List[AdTrackerResponse] = []
+    scam_check_records: List[ScamCheckResponse] = []
 
     class Config:
         from_attributes = True
