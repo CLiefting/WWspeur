@@ -664,9 +664,12 @@ def download_evidence(
 
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for f in files:
-                pdf_path = os.path.join(evidence_dir, f["filename"])
-                if os.path.exists(pdf_path):
-                    zf.write(pdf_path, f["filename"])
+                for key in ("meta", "pagina"):
+                    fname = f.get(key)
+                    if fname:
+                        pdf_path = os.path.join(evidence_dir, fname)
+                        if os.path.exists(pdf_path):
+                            zf.write(pdf_path, fname)
 
         def cleanup():
             shutil.rmtree(evidence_dir, ignore_errors=True)
