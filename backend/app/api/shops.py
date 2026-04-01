@@ -20,6 +20,47 @@ from app.schemas.scan import ShopDetailResponse
 
 router = APIRouter()
 
+THUMBNAIL_CACHE_DIR = "/tmp/wwspeur_thumbnails"
+THUMBNAIL_MAX_AGE = 86400  # 24 uur
+
+
+@router.get("/{shop_id}/thumbnail")
+def get_thumbnail(
+    shop_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Geeft een JPEG thumbnail van de homepage van een shop."""
+    import subprocess, os, time
+    from fastapi.responses import FileResponse, Response
+
+    shop = db.query(Shop).filter(Shop.id == shop_id).first()
+    if not shop:
+        raise HTTPException(status_code=404, detail="Webwinkel niet gevonden")
+
+    os.makedirs(THUMBNAIL_CACHE_DIR, exist_ok=True)
+    cache_path = os.path.join(THUMBNAIL_CACHE_DIR, f"{shop_id}.jpg")
+
+    # Gebruik cache als recent genoeg
+    if os.path.exists(cache_path) and (time.time() - os.path.getmtime(cache_path)) < THUMBNAIL_MAX_AGE:
+        return FileResponse(cache_path, media_type="image/jpeg")
+
+    script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "reports", "thumbnail.js")
+    node_modules = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "node_modules")
+
+    try:
+        result = subprocess.run(
+            ["node", script_path, shop.url, cache_path],
+            capture_output=True, text=True, timeout=25,
+            env={**os.environ, "NODE_PATH": node_modules},
+        )
+        if result.returncode == 0 and os.path.exists(cache_path):
+            return FileResponse(cache_path, media_type="image/jpeg")
+    except Exception:
+        pass
+
+    raise HTTPException(status_code=503, detail="Thumbnail niet beschikbaar")
+
 _PRIVATE_NETWORKS = [
     ipaddress.ip_network("10.0.0.0/8"),
     ipaddress.ip_network("172.16.0.0/12"),

@@ -632,6 +632,7 @@ def crawl_website(start_url, max_pages=DEFAULT_MAX_PAGES,
     priority_queue = []
     normal_queue = [_normalize_url(start_url)]
     product_queue = []
+    queued = {_normalize_url(start_url)}  # set voor O(1) deduplicatie
     # Max productpagina's: hoogstens 20% van budget, minimaal 3
     max_product_pages = max(3, max_pages // 5)
 
@@ -645,18 +646,16 @@ def crawl_website(start_url, max_pages=DEFAULT_MAX_PAGES,
     def enqueue_links(links):
         for link in links:
             normalized = _normalize_url(link)
-            if normalized in visited:
+            if normalized in visited or normalized in queued:
                 continue
+            queued.add(normalized)
             path = urlparse(link).path.lower()
             if any(p in path for p in PRIORITY_PAGE_PATTERNS):
-                if normalized not in [_normalize_url(u) for u in priority_queue]:
-                    priority_queue.append(link)
+                priority_queue.append(link)
             elif _is_product_url(link):
-                if normalized not in [_normalize_url(u) for u in product_queue]:
-                    product_queue.append(link)
+                product_queue.append(link)
             else:
-                if normalized not in [_normalize_url(u) for u in normal_queue]:
-                    normal_queue.append(link)
+                normal_queue.append(link)
 
     page_count = 0
     product_pages_crawled = 0

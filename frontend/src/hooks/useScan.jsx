@@ -61,6 +61,11 @@ export function ScanProvider({ children }) {
       () => abortRef.current,
     );
 
+    // Scan klaar: wis actieve scan-state
+    setIsScanning(null);
+    setCurrentShopId(null);
+    setScanStartedAt(null);
+
     return shopId;
   };
 
@@ -108,7 +113,7 @@ export function ScanProvider({ children }) {
         // Remove this shop from the queue (it's now active)
         setScanQueue(prev => prev.filter(s => s.id !== shop.id));
         shopStartRef.current = Date.now();
-        setBatchProgress(p => ({ ...p, current: i + 1, currentDomain: shop.domain, shopProgress: null, shopStartedAt: Date.now() }));
+        setBatchProgress(p => ({ ...p, current: i + 1, currentDomain: shop.domain, shopId: shop.id, shopProgress: null, shopStartedAt: Date.now() }));
         setIsScanning(shop.id);
         setCurrentShopId(shop.id);
         setScanningUrl(shop.url || shop.domain);
@@ -187,7 +192,7 @@ export function ScanProvider({ children }) {
 
         const shop = allShops[i];
         shopStartRef.current = Date.now();
-        setBatchProgress(p => ({ ...p, current: i + 1, currentDomain: shop.domain, shopProgress: null, shopStartedAt: Date.now() }));
+        setBatchProgress(p => ({ ...p, current: i + 1, currentDomain: shop.domain, shopId: shop.id, shopProgress: null, shopStartedAt: Date.now() }));
 
         try {
           const scan = await scans.create(

@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { shops } from '../services/api';
 import { useScan } from '../hooks/useScan';
+import BatchScanProgress from '../components/BatchScanProgress';
+import * as XLSX from 'xlsx';
 
 const RISK_ORDER = { critical: 0, high: 1, medium: 2, low: 3, unknown: 4 };
 
@@ -92,6 +94,7 @@ export default function OverviewPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(new Set());
   const [bulkStatus, setBulkStatus] = useState('');
+  const [exportDialog, setExportDialog] = useState(false);
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState({ key: null, dir: 'asc' });
   const [colFilters, setColFilters] = useState(EMPTY_FILTERS);
@@ -333,6 +336,83 @@ export default function OverviewPage() {
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selected.has(id));
   const someSelected = selected.size > 0;
 
+  const _exportShops = someSelected
+    ? visibleShops.filter(s => selected.has(s.id))
+    : visibleShops;
+
+  const _buildStandardRow = (s) => {
+    const st = s.scan_stats || {};
+    return {
+      'Domein': s.domain,
+      'URL': s.url || '',
+      'Risico': s.risk_level || 'onbekend',
+      'Platform': st.platform || '',
+      'Domeinleeftijd (jr)': st.domain_age || '',
+      'Registrar': st.registrar || '',
+      'SSL geldig': st.ssl_valid ? 'Ja' : 'Nee',
+      'Online': st.is_online === true ? 'Ja' : st.is_online === false ? 'Nee' : '',
+      'E-mails (aantal)': st.emails || 0,
+      'Telefoon (aantal)': st.phones || 0,
+      'Adressen (aantal)': st.addresses || 0,
+      'KvK (aantal)': st.kvk || 0,
+      'BTW (aantal)': st.btw || 0,
+      'IBAN (aantal)': st.iban || 0,
+      'Contact pagina': st.contact ? 'Ja' : 'Nee',
+      'Privacy pagina': st.privacy ? 'Ja' : 'Nee',
+      'Voorwaarden': st.terms ? 'Ja' : 'Nee',
+      'Retourbeleid': st.returns ? 'Ja' : 'Nee',
+      'Keurmerken (geverif.)': st.trustmarks_verified || 0,
+      'Valse keurmerken': st.claimed_not_verified || 0,
+      'Trustpilot score': st.trustpilot_score || '',
+      'Laatste scan': s.last_scanned ? new Date(s.last_scanned).toLocaleString('nl-NL') : '',
+    };
+  };
+
+  const _writeExcel = (rows, filename) => {
+    if (!rows.length) return;
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = Object.keys(rows[0]).map(k => ({ wch: Math.max(k.length + 2, 14) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'WWSpeur export');
+    XLSX.writeFile(wb, filename);
+  };
+
+  const handleExportStandard = () => {
+    setExportDialog(false);
+    const datum = new Date().toISOString().slice(0, 10);
+    _writeExcel(_exportShops.map(_buildStandardRow), `wwspeur_export_${datum}.xlsx`);
+  };
+
+  const handleExportExtended = async () => {
+    setExportDialog(false);
+    setBulkStatus(`Uitgebreide data ophalen (0/${_exportShops.length})...`);
+    const parseJson = (val) => {
+      if (!val) return [];
+      try { const p = JSON.parse(val); return Array.isArray(p) ? p.filter(Boolean) : p ? [p] : []; }
+      catch { return val ? [val] : []; }
+    };
+    const rows = [];
+    for (let i = 0; i < _exportShops.length; i++) {
+      const s = _exportShops[i];
+      setBulkStatus(`Uitgebreide data ophalen (${i + 1}/${_exportShops.length})...`);
+      let detail = null;
+      try { detail = await shops.get(s.id); } catch (_) {}
+      const scrape = detail?.scrape_records?.[0];
+      rows.push({
+        ..._buildStandardRow(s),
+        'E-mailadressen': parseJson(scrape?.emails_found).join(', '),
+        'Telefoonnummers': parseJson(scrape?.phones_found).join(', '),
+        'Adressen': parseJson(scrape?.addresses_found).join(' | '),
+        'KvK-nummers': parseJson(scrape?.kvk_number_found).join(', '),
+        'BTW-nummers': parseJson(scrape?.btw_number_found).join(', '),
+        'IBAN-nummers': parseJson(scrape?.iban_found).join(', '),
+      });
+    }
+    setBulkStatus('');
+    const datum = new Date().toISOString().slice(0, 10);
+    _writeExcel(rows, `wwspeur_export_uitgebreid_${datum}.xlsx`);
+  };
+
   const filterBtn = (val, label) => (
     <button onClick={() => setFilter(val)} style={{
       background: filter === val ? 'rgba(212,168,67,0.15)' : 'transparent',
@@ -344,6 +424,7 @@ export default function OverviewPage() {
 
   return (
     <div style={{ maxWidth: '100%', margin: '0 auto', padding: '32px 24px' }}>
+      <BatchScanProgress />
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
@@ -367,6 +448,10 @@ export default function OverviewPage() {
                 style={{ background: 'transparent', border: '1px solid var(--gold-dim)', color: 'var(--gold)', fontSize: 12, fontWeight: 500, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', opacity: bulkStatus ? 0.5 : 1 }}>
                 Rapporten
               </button>
+              <button onClick={() => setExportDialog(true)} disabled={!!bulkStatus} title="Exporteer naar Excel"
+                style={{ background: 'transparent', border: '1px solid var(--gold-dim)', color: 'var(--gold)', fontSize: 12, fontWeight: 500, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', opacity: bulkStatus ? 0.5 : 1 }}>
+                Excel
+              </button>
               <button onClick={handleBulkCheckStatus} disabled={!!bulkStatus}
                 style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 500, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', opacity: bulkStatus ? 0.5 : 1 }}>
                 Check status
@@ -380,6 +465,12 @@ export default function OverviewPage() {
                 Verwijderen
               </button>
             </>
+          )}
+          {!someSelected && (
+            <button onClick={() => setExportDialog(true)} title="Exporteer zichtbare rijen naar Excel"
+              style={{ background: 'transparent', border: '1px solid var(--gold-dim)', color: 'var(--gold)', fontSize: 12, fontWeight: 500, padding: '6px 14px', borderRadius: 6, cursor: 'pointer' }}>
+              Excel
+            </button>
           )}
           <button onClick={() => navigate('/')}
             style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 12, padding: '6px 14px', borderRadius: 6 }}>
@@ -663,6 +754,56 @@ export default function OverviewPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Export dialoog */}
+      {exportDialog && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 200,
+          background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }} onClick={() => setExportDialog(false)}>
+          <div style={{
+            background: 'var(--bg-card)', border: '1px solid var(--gold-dim)',
+            borderRadius: 14, padding: '28px 32px', width: 420, maxWidth: '90vw',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
+              Excel export
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 24 }}>
+              {someSelected ? `${selected.size} geselecteerde` : `${_exportShops.length} zichtbare`} webwinkel(s)
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <button onClick={handleExportStandard} style={{
+                background: 'var(--bg-input)', border: '1px solid var(--border)',
+                borderRadius: 10, padding: '14px 18px', textAlign: 'left', cursor: 'pointer',
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>Standaard</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Tellingen per veld — snel, geen extra verzoeken</div>
+              </button>
+
+              <button onClick={handleExportExtended} style={{
+                background: 'rgba(212,168,67,0.06)', border: '1px solid var(--gold-dim)',
+                borderRadius: 10, padding: '14px 18px', textAlign: 'left', cursor: 'pointer',
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gold)', marginBottom: 4 }}>Uitgebreid</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  Werkelijke waarden per kolom — e-mailadressen, telefoonnummers, KvK-, BTW-, IBAN-nummers en adressen
+                </div>
+                {_exportShops.length > 20 && (
+                  <div style={{ fontSize: 11, color: 'var(--gold-dim)', marginTop: 6 }}>
+                    ⚠ {_exportShops.length} shops — kan even duren
+                  </div>
+                )}
+              </button>
+            </div>
+
+            <button onClick={() => setExportDialog(false)} style={{
+              marginTop: 20, background: 'transparent', border: 'none',
+              color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', padding: 0,
+            }}>Annuleren</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

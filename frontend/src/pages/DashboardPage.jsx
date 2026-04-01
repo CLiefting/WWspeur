@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { shops } from '../services/api';
 import { useScan } from '../hooks/useScan';
+import BatchScanProgress from '../components/BatchScanProgress';
+import SiteThumbnail from '../components/SiteThumbnail';
 
 export default function DashboardPage() {
   const [url, setUrl] = useState('https://pakjedealsnu.nl/');
@@ -63,12 +65,12 @@ export default function DashboardPage() {
     }
   }, [isScanning, batchScanning]);
 
-  // Tick elke seconde tijdens batch/scan voor live tijdweergave
+  // Tick elke seconde tijdens enkelvoudige scan voor live tijdweergave
   useEffect(() => {
-    if (!batchScanning && !isScanning) return;
+    if (!isScanning) return;
     const id = setInterval(() => setTick(t => t + 1), 1000);
     return () => clearInterval(id);
-  }, [batchScanning, isScanning]);
+  }, [isScanning]);
 
   const handleAddAndScan = async () => {
     if (!url.trim()) return;
@@ -284,18 +286,6 @@ export default function DashboardPage() {
           >
             {batchScanning ? `Scannen ${batchProgress.current}/${batchProgress.total}...` : `Scan alle (${totalShops})`}
           </button>
-          {batchScanning && (
-            <button
-              onClick={stopBatchScan}
-              style={{
-                background: 'transparent', border: '1px solid var(--danger)',
-                color: 'var(--danger)', fontSize: 12, fontWeight: 500,
-                padding: '8px 14px', borderRadius: 6,
-              }}
-            >
-              Stop
-            </button>
-          )}
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
             <input
               type="checkbox"
@@ -309,112 +299,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Batch scanning progress */}
-      {batchScanning && (
-        <div style={{
-          background: 'var(--bg-card)', border: '1px solid var(--gold-dim)',
-          borderRadius: 10, padding: '16px 20px', marginBottom: 24,
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <div style={{ fontSize: 13, color: 'var(--gold-light)', fontWeight: 500 }}>
-              Batch scan: {batchProgress.current} / {batchProgress.total}
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <div style={{
-                width: 8, height: 8, borderRadius: '50%', background: 'var(--gold)',
-                animation: 'pulse 1.5s ease-in-out infinite',
-              }} />
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 14, color: 'var(--gold)' }}>
-                {batchProgress.currentDomain}
-              </span>
-            </div>
-          </div>
-
-          <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', marginBottom: 8 }}>
-            <div style={{
-              height: '100%',
-              width: `${batchProgress.total > 0 ? (batchProgress.current / batchProgress.total) * 100 : 0}%`,
-              background: 'linear-gradient(90deg, var(--gold-dim), var(--gold))',
-              borderRadius: 2, transition: 'width 0.5s ease',
-            }} />
-          </div>
-
-          {/* Tijdweergave batch */}
-          {(() => {
-            const now = Date.now();
-            const batchElapsed = batchProgress.batchStartedAt ? now - batchProgress.batchStartedAt : 0;
-            const shopElapsed = batchProgress.shopStartedAt ? now - batchProgress.shopStartedAt : 0;
-            const completed = batchProgress.completedShops?.length || 0;
-            // Gemiddelde per shop: gebruik voltooide shops, of huidige elapsed als schatting
-            const avgMs = completed > 0 ? batchElapsed / completed : shopElapsed;
-            // Resterend = shops na huidige + rest van huidige shop
-            const shopsAfter = Math.max(0, batchProgress.total - batchProgress.current);
-            const eta = avgMs > 0 ? (avgMs * shopsAfter) + Math.max(0, avgMs - shopElapsed) : null;
-            return (
-              <div style={{ display: 'flex', gap: 20, marginBottom: 12, fontSize: 11, fontFamily: 'var(--font-mono)' }}>
-                <span style={{ color: 'var(--text-muted)' }}>
-                  Deze shop: <span style={{ color: 'var(--gold-light)' }}>{fmtTime(shopElapsed)}</span>
-                </span>
-                <span style={{ color: 'var(--text-muted)' }}>
-                  Totaal verstreken: <span style={{ color: 'var(--gold-light)' }}>{fmtTime(batchElapsed)}</span>
-                </span>
-                <span style={{ color: 'var(--text-muted)' }}>
-                  Nog ca: <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
-                    {eta !== null ? fmtTime(eta) : '--:--'}
-                  </span>
-                </span>
-              </div>
-            );
-          })()}
-
-          {batchProgress.shopProgress && (
-            <div style={{
-              background: 'rgba(255,255,255,0.03)', borderRadius: 8,
-              padding: '10px 14px', marginBottom: 12, border: '1px solid var(--border)',
-            }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
-                Huidige scan: {batchProgress.currentDomain}
-              </div>
-              <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', marginBottom: 8 }}>
-                <div style={{
-                  height: '100%',
-                  width: `${Math.min(100, ((batchProgress.shopProgress.pages_crawled || 0) / (batchProgress.shopProgress.max_pages || 50)) * 100)}%`,
-                  background: 'var(--gold-dim)', borderRadius: 2, transition: 'width 0.5s ease',
-                }} />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-                {[
-                  { label: "Pagina's", value: batchProgress.shopProgress.pages_crawled || 0 },
-                  { label: 'E-mails', value: batchProgress.shopProgress.emails_found || 0 },
-                  { label: 'Telefoon', value: batchProgress.shopProgress.phones_found || 0 },
-                  { label: 'KvK', value: batchProgress.shopProgress.kvk_found || 0 },
-                  { label: 'Bewijs', value: (batchProgress.shopProgress.emails_found || 0) + (batchProgress.shopProgress.phones_found || 0) + (batchProgress.shopProgress.addresses_found || 0) + (batchProgress.shopProgress.kvk_found || 0) },
-                ].map(({ label, value }) => (
-                  <div key={label} style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--gold)', lineHeight: 1 }}>{value}</div>
-                    <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: 2 }}>{label}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {batchProgress.completedShops?.length > 0 && (
-            <div style={{ maxHeight: 120, overflowY: 'auto' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Afgerond:</div>
-              {batchProgress.completedShops.map((s, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '1px 0' }}>
-                  <span style={{ color: s.status === 'ok' ? 'var(--success)' : 'var(--danger)' }}>
-                    {s.status === 'ok' ? '✓' : '✗'}
-                  </span>
-                  <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{s.domain}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
-        </div>
-      )}
+      <BatchScanProgress />
 
       {/* Scanning indicator with progress */}
       {isScanning && (
@@ -425,12 +310,15 @@ export default function DashboardPage() {
           marginBottom: 24,
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
-                Onderzoekt
-              </div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 16, color: 'var(--gold)' }}>
-                {scanningUrl}
+            <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+              <SiteThumbnail shopId={currentShopId} width={120} height={75} />
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+                  Onderzoekt
+                </div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 16, color: 'var(--gold)' }}>
+                  {scanningUrl}
+                </div>
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>

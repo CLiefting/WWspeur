@@ -6,11 +6,13 @@ export default function Header() {
 
   return (
     <header style={{
+      position: 'sticky', top: 0, zIndex: 100,
       borderBottom: '1px solid var(--border)',
       padding: '16px 32px',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
+      background: 'var(--bg-primary)',
     }}>
       <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none' }}>
         <div style={{
